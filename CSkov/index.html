@@ -98,7 +98,19 @@
         class="fixed inset-0 bg-[#f4f4f0] bg-opacity-90 z-50 flex flex-col justify-center items-center pointer-events-auto">
         <div class="sketch-box p-12 max-w-4xl text-center">
             <h1 class="text-6xl font-bold sketch-text mb-4 text-red-800">TARKOV: GORE SKETCH</h1>
-            <h2 class="text-3xl sketch-text mb-8 text-gray-800">Escolha sua Facção para Iniciar:</h2>
+            <h2 class="text-2xl sketch-text mb-2 text-gray-800">Escolha sua Facção:</h2>
+
+            <!-- Campo de Nome -->
+            <div class="mb-6">
+                <label class="text-xl sketch-text text-gray-700">Seu nome no servidor:</label><br>
+                <input id="player-name-input" type="text" maxlength="16" placeholder="Ex: Scavzinho123"
+                    style="pointer-events:auto; border:2px solid #222; background:#fff; font-family:'Caveat',cursive; font-size:1.4rem; padding:6px 12px; border-radius:4px; outline:none; margin-top:6px; text-align:center; width:260px;"
+                    value=""/>
+            </div>
+
+            <!-- Status conexão -->
+            <div id="conn-status" class="text-lg sketch-text mb-4 text-gray-500">⏳ Conectando ao servidor...</div>
+
             <div class="flex flex-col md:flex-row gap-8 justify-center">
                 <!-- Botão PMC -->
                 <button onclick="startGame('PMC')"
@@ -124,6 +136,21 @@
                 </button>
             </div>
         </div>
+    </div>
+
+    <!-- Chat UI -->
+    <div id="chat-box" style="display:none; position:fixed; bottom:20px; right:20px; width:300px; z-index:200; pointer-events:auto;">
+        <div id="chat-messages" style="background:rgba(255,255,255,0.85); border:2px solid #222; border-radius:6px; padding:8px; height:130px; overflow-y:auto; font-family:'Caveat',cursive; font-size:1rem; margin-bottom:6px;"></div>
+        <div style="display:flex; gap:6px;">
+            <input id="chat-input" type="text" maxlength="80" placeholder="Mensagem (Enter)..."
+                style="flex:1; border:2px solid #222; background:#fff; font-family:'Caveat',cursive; font-size:1rem; padding:4px 8px; border-radius:4px; outline:none; pointer-events:auto;"/>
+            <button onclick="sendChat()" style="border:2px solid #222; background:#fff; font-family:'Caveat',cursive; font-size:1rem; padding:4px 10px; border-radius:4px; cursor:pointer;">📤</button>
+        </div>
+    </div>
+
+    <!-- Placar de jogadores online -->
+    <div id="player-count-hud" style="display:none; position:fixed; top:12px; right:12px; background:rgba(255,255,255,0.85); border:2px solid #222; border-radius:6px; padding:6px 14px; font-family:'Caveat',cursive; font-size:1.1rem; z-index:150; pointer-events:none;">
+        👥 Online: <span id="online-count">1</span>
     </div>
 
     <!-- HUD Layer -->
@@ -1221,7 +1248,7 @@
                 if (Math.hypot((x + w / 2) - player.x, (y + h / 2) - player.y) > 300) { walls.push({ x, y, w, h }); }
             }
 
-            for (let i = 0; i < 75; i++) {
+            for (let i = 0; i < 22; i++) {
                 let x = Math.random() * WORLD_SIZE; let y = Math.random() * WORLD_SIZE;
                 if (Math.hypot(x - player.x, y - player.y) > 600) enemies.push(new Enemy(x, y));
             }
@@ -1502,6 +1529,268 @@
         generateMap();
         gameLoop();
         console.log("Game Engine Ready");
+
+        // =============================================
+        // SISTEMA MULTIPLAYER - WebSocket
+        // =============================================
+        let myId = null;
+        let myName = 'Jogador';
+        let remotePlayers = new Map(); // id -> {x, y, angle, hp, faction, color, name, weapon, stanceSide, gunLength}
+        let socket = null;
+        let wsConnected = false;
+        const connStatus = document.getElementById('conn-status');
+
+        function connectWebSocket() {
+            const wsUrl = `ws://${window.location.host}`;
+            try {
+                socket = new WebSocket(wsUrl);
+            } catch(e) {
+                if (connStatus) connStatus.textContent = '❌ Servidor offline. Jogando solo.';
+                return;
+            }
+
+            socket.onopen = () => {
+                wsConnected = true;
+                if (connStatus) connStatus.textContent = '✅ Conectado! Escolha sua facção.';
+                console.log('[WS] Conectado ao servidor multiplayer');
+            };
+
+            socket.onclose = () => {
+                wsConnected = false;
+                if (connStatus) connStatus.textContent = '❌ Desconectado do servidor.';
+                console.log('[WS] Desconectado');
+                // Tenta reconectar após 3s
+                setTimeout(connectWebSocket, 3000);
+            };
+
+            socket.onerror = () => {
+                if (connStatus) connStatus.textContent = '❌ Servidor offline. Jogando solo.';
+            };
+
+            socket.onmessage = (event) => {
+                let data;
+                try { data = JSON.parse(event.data); } catch(e) { return; }
+
+                switch (data.type) {
+                    case 'WELCOME':
+                        myId = data.id;
+                        // Carrega jogadores já conectados
+                        data.players.forEach(p => {
+                            if (p.id !== myId) remotePlayers.set(p.id, p);
+                        });
+                        updateOnlineCount();
+                        break;
+
+                    case 'PLAYER_JOINED':
+                        if (data.id !== myId) {
+                            remotePlayers.set(data.id, { id: data.id, x: WORLD_SIZE/2, y: WORLD_SIZE/2, hp: 100, name: data.id });
+                            addChatMessage('Sistema', `${data.id} entrou no jogo!`, '#006400');
+                            updateOnlineCount();
+                        }
+                        break;
+
+                    case 'PLAYER_UPDATE':
+                        if (data.id !== myId) {
+                            remotePlayers.set(data.id, data);
+                        }
+                        break;
+
+                    case 'BULLET':
+                        // Bullet remoto: cria bala vinda de outro jogador
+                        if (data.id !== myId) {
+                            let rb = new Bullet(data.x, data.y, data.angle, data.faction, data.damage, data.speed, false);
+                            rb.isRemote = true;
+                            bullets.push(rb);
+                        }
+                        break;
+
+                    case 'PLAYER_LEFT':
+                        remotePlayers.delete(data.id);
+                        addChatMessage('Sistema', `${data.id} saiu.`, '#8b0000');
+                        updateOnlineCount();
+                        break;
+
+                    case 'PLAYER_DIED':
+                        if (data.id !== myId) remotePlayers.delete(data.id);
+                        updateOnlineCount();
+                        break;
+
+                    case 'CHAT':
+                        addChatMessage(data.name, data.msg, '#333');
+                        break;
+                }
+            };
+        }
+
+        function updateOnlineCount() {
+            const el = document.getElementById('online-count');
+            if (el) el.textContent = remotePlayers.size + 1;
+        }
+
+        function sendPlayerUpdate() {
+            if (!wsConnected || !socket || currentState !== GAME_STATE.PLAYING) return;
+            socket.send(JSON.stringify({
+                type: 'PLAYER_UPDATE',
+                x: player.x,
+                y: player.y,
+                angle: player.angle,
+                hp: player.hp,
+                faction: player.faction,
+                color: player.color,
+                name: myName,
+                weapon: player.weapon.name,
+                stanceSide: player.stanceSide,
+                gunLength: player.weapon.type === 'Pistol' ? 15 : 28,
+            }));
+        }
+
+        function sendBullet(x, y, angle, faction, damage, speed) {
+            if (!wsConnected || !socket) return;
+            socket.send(JSON.stringify({ type: 'BULLET', x, y, angle, faction, damage, speed }));
+        }
+
+        function addChatMessage(name, msg, color) {
+            const box = document.getElementById('chat-messages');
+            if (!box) return;
+            const div = document.createElement('div');
+            div.style.color = color || '#333';
+            div.innerHTML = `<b>${name}:</b> ${msg.replace(/</g,'&lt;')}`;
+            box.appendChild(div);
+            box.scrollTop = box.scrollHeight;
+        }
+
+        function sendChat() {
+            const input = document.getElementById('chat-input');
+            if (!input || !input.value.trim()) return;
+            const msg = input.value.trim();
+            input.value = '';
+            if (!wsConnected || !socket) {
+                addChatMessage(myName, msg, '#333');
+                return;
+            }
+            socket.send(JSON.stringify({ type: 'CHAT', name: myName, msg }));
+            addChatMessage(myName, msg, '#1a3300');
+        }
+
+        // Enter para enviar chat
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') {
+                const ci = document.getElementById('chat-input');
+                if (document.activeElement === ci) { sendChat(); return; }
+                if (currentState === GAME_STATE.PLAYING) {
+                    ci.focus();
+                }
+            }
+        });
+
+        // Sincroniza posição 20x por segundo
+        setInterval(sendPlayerUpdate, 50);
+
+        // Patch no shoot do player para enviar balas via rede
+        const _origShoot = Player.prototype.shoot;
+        Player.prototype.shoot = function() {
+            _origShoot.call(this);
+            // Envia a última bala criada
+            const lastBullet = bullets[bullets.length - 1];
+            if (lastBullet) {
+                sendBullet(lastBullet.x, lastBullet.y,
+                    Math.atan2(lastBullet.vy, lastBullet.vx),
+                    this.faction, lastBullet.damage,
+                    Math.hypot(lastBullet.vx, lastBullet.vy));
+            }
+        };
+
+        // Patch no draw para renderizar jogadores remotos
+        const _origDraw = draw;
+        draw = function() {
+            _origDraw();
+            if (currentState !== GAME_STATE.PLAYING) return;
+
+            // Pega a câmera atual (mesmos cálculos do draw original)
+            let targetCamX = player.x;
+            let targetCamY = player.y;
+            if (player.usingBinoculars) {
+                targetCamX += (worldMouse.x - player.x) * 0.5;
+                targetCamY += (worldMouse.y - player.y) * 0.5;
+            }
+            let camX = Math.max(0, Math.min(targetCamX - canvas.width / 2, WORLD_SIZE - canvas.width));
+            let camY = Math.max(0, Math.min(targetCamY - canvas.height / 2, WORLD_SIZE - canvas.height));
+
+            ctx.save();
+            ctx.translate(-camX, -camY);
+
+            remotePlayers.forEach(rp => {
+                if (!rp || rp.hp <= 0) return;
+
+                const rpColor = rp.color || (rp.faction === 'PMC' ? '#1a3300' : '#4d0000');
+                const rpAngle = rp.angle || 0;
+                const sy = 8 * (rp.stanceSide || 1);
+                const gl = rp.gunLength || 15;
+                const rpRadius = 18;
+
+                ctx.save();
+                ctx.translate(rp.x, rp.y);
+                ctx.rotate(rpAngle);
+
+                // Corpo
+                sketchCircle(0, 0, rpRadius, 2, 2, rpColor);
+
+                // Arma
+                ctx.strokeStyle = '#444';
+                ctx.lineWidth = 4;
+                ctx.beginPath();
+                ctx.moveTo(rpRadius - 5, sy);
+                ctx.lineTo(rpRadius + gl, sy);
+                ctx.stroke();
+
+                // Mãos
+                ctx.fillStyle = rpColor;
+                ctx.strokeStyle = '#111';
+                ctx.lineWidth = 1;
+                ctx.beginPath(); ctx.arc(rpRadius - 2, sy, 6, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+                if (gl > 15) {
+                    ctx.beginPath(); ctx.arc(rpRadius + gl * 0.5, sy, 6, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+                }
+
+                ctx.restore();
+
+                // Nome acima do jogador
+                ctx.fillStyle = rpColor;
+                ctx.font = 'bold 16px Caveat';
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'bottom';
+                const displayName = rp.name || rp.id || '?';
+                ctx.fillText(displayName, rp.x, rp.y - rpRadius - 4);
+
+                // Barra de vida
+                const barW = 40;
+                const barH = 5;
+                const barX = rp.x - barW / 2;
+                const barY = rp.y - rpRadius - 20;
+                ctx.fillStyle = '#555';
+                ctx.fillRect(barX, barY, barW, barH);
+                const hpPct = Math.max(0, (rp.hp || 0) / 100);
+                ctx.fillStyle = hpPct > 0.5 ? '#22aa22' : hpPct > 0.25 ? '#ffaa00' : '#cc0000';
+                ctx.fillRect(barX, barY, barW * hpPct, barH);
+            });
+
+            ctx.restore();
+        };
+
+        // Patch no startGame para pegar nome e mostrar chat/hud
+        const _origStartGame = startGame;
+        startGame = function(faction) {
+            const nameInput = document.getElementById('player-name-input');
+            myName = (nameInput && nameInput.value.trim()) ? nameInput.value.trim() : ('Jogador' + Math.floor(Math.random()*1000));
+            _origStartGame(faction);
+            document.getElementById('chat-box').style.display = 'block';
+            document.getElementById('player-count-hud').style.display = 'block';
+            updateOnlineCount();
+            addChatMessage('Sistema', `Você entrou como ${myName} (${faction})`, '#006400');
+        };
+
+        // Inicia a conexão
+        connectWebSocket();
 
     </script>
 </body>
