@@ -6,6 +6,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Tarkov: Sketch Survival - GORE EDITION</title>
     <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Caveat:wght@400;700&display=swap');
 
@@ -96,47 +97,40 @@
     <!-- Start Menu Screen -->
     <div id="start-screen"
         class="fixed inset-0 bg-[#f4f4f0] bg-opacity-90 z-50 flex flex-col justify-center items-center pointer-events-auto">
-        <div class="sketch-box p-12 max-w-4xl text-center">
+        <div class="sketch-box p-10 max-w-4xl text-center">
             <h1 class="text-6xl font-bold sketch-text mb-4 text-red-800">TARKOV: GORE SKETCH</h1>
-            <h2 class="text-2xl sketch-text mb-2 text-gray-800">Escolha sua Facção:</h2>
+            <h2 class="text-2xl sketch-text mb-4 text-gray-800">Multiplayer P2P</h2>
 
-            <!-- Campo de Nome -->
-            <div class="mb-6">
-                <label class="text-xl sketch-text text-gray-700">Seu nome no servidor:</label><br>
-                <input id="player-name-input" type="text" maxlength="16" placeholder="Ex: Scavzinho123"
-                    style="pointer-events:auto; border:2px solid #222; background:#fff; font-family:'Caveat',cursive; font-size:1.4rem; padding:6px 12px; border-radius:4px; outline:none; margin-top:6px; text-align:center; width:260px;"
-                    value=""/>
+            <div class="flex flex-col gap-3 mb-6 items-center">
+                <div>
+                    <label class="text-xl sketch-text text-gray-700">Seu nick:</label><br>
+                    <input id="player-name-input" type="text" maxlength="16" placeholder="Ex: Scavzinho123"
+                        style="pointer-events:auto;border:2px solid #222;background:#fff;font-family:'Caveat',cursive;font-size:1.4rem;padding:6px 14px;border-radius:4px;outline:none;margin-top:4px;text-align:center;width:240px;"/>
+                </div>
+                <div>
+                    <label class="text-xl sketch-text text-gray-700">Código da sala <span class="text-gray-400">(vazio = criar nova)</span>:</label><br>
+                    <input id="room-code-input" type="text" maxlength="6" placeholder="Ex: ABC123"
+                        style="pointer-events:auto;border:2px solid #222;background:#fff;font-family:'Caveat',cursive;font-size:1.4rem;padding:6px 14px;border-radius:4px;outline:none;margin-top:4px;text-align:center;width:200px;text-transform:uppercase;"/>
+                </div>
             </div>
 
-            <!-- Status conexão -->
-            <div id="conn-status" class="text-lg sketch-text mb-4 text-gray-500">⏳ Conectando ao servidor...</div>
+            <div id="conn-status" class="text-lg sketch-text mb-4 text-gray-500">Escolha sua facção para entrar</div>
 
-            <div class="flex flex-col md:flex-row gap-8 justify-center">
-                <!-- Botão PMC -->
-                <button onclick="startGame('PMC')"
-                    style="min-width: 320px;"
-                    class="sketch-box p-6 w-80 text-left hover:bg-gray-200 transition-colors cursor-pointer group">
-                    <h3
-                        class="text-4xl font-bold sketch-text text-[#1a3300] group-hover:scale-105 transition-transform">
-                        Jogar como PMC</h3>
-                    <p class="text-xl sketch-text mt-4 text-gray-700"><b>Mercenário.</b><br>Todos no mapa são hostis
-                        (tanto Scavs quanto PMCs rivais). Você é verde-escuro e atira para matar.</p>
+            <div class="flex flex-col md:flex-row gap-6 justify-center">
+                <button onclick="startGame('PMC')" style="min-width:280px;"
+                    class="sketch-box p-5 text-left hover:bg-gray-200 transition-colors cursor-pointer group">
+                    <h3 class="text-3xl font-bold sketch-text text-[#1a3300]">⚔️ PMC</h3>
+                    <p class="text-lg sketch-text mt-2 text-gray-700">Mercenário. Hostil a todos.</p>
                 </button>
-
-                <!-- Botão SCAV -->
-                <button onclick="startGame('SCAV')"
-                    style="min-width: 320px;"
-                    class="sketch-box p-6 w-80 text-left hover:bg-gray-200 transition-colors cursor-pointer group">
-                    <h3
-                        class="text-4xl font-bold sketch-text text-[#4d0000] group-hover:scale-105 transition-transform">
-                        Jogar como SCAV</h3>
-                    <p class="text-xl sketch-text mt-4 text-gray-700"><b>Sobrevivente Local.</b><br>Outros Scavs
-                        vermelhos são pacíficos com você (a menos que você atire neles primeiro). Sobreviva à guerra.
-                    </p>
+                <button onclick="startGame('SCAV')" style="min-width:280px;"
+                    class="sketch-box p-5 text-left hover:bg-gray-200 transition-colors cursor-pointer group">
+                    <h3 class="text-3xl font-bold sketch-text text-[#4d0000]">🧟 SCAV</h3>
+                    <p class="text-lg sketch-text mt-2 text-gray-700">Sobrevivente. Aliado aos Scavs.</p>
                 </button>
             </div>
         </div>
     </div>
+
 
     <!-- Chat UI -->
     <div id="chat-box" style="display:none; position:fixed; bottom:20px; right:20px; width:300px; z-index:200; pointer-events:auto;">
@@ -1531,9 +1525,257 @@
         console.log("Game Engine Ready");
 
         // =============================================
-        // SISTEMA MULTIPLAYER - WebSocket
+        // MULTIPLAYER P2P - PeerJS (funciona no Vercel!)
         // =============================================
-        let myId = null;
+        let myName = 'Jogador';
+        let remotePlayers = new Map();
+        let peer = null;
+        let connections = new Map(); // peerId -> DataConnection
+        let roomCode = null;
+        let peerReady = false;
+
+        const connStatus = document.getElementById('conn-status');
+
+        function setStatus(msg, color) {
+            if (connStatus) { connStatus.textContent = msg; connStatus.style.color = color || '#555'; }
+        }
+
+        function initPeer(targetRoom) {
+            if (targetRoom) {
+                roomCode = targetRoom.toUpperCase();
+                peer = new Peer();
+            } else {
+                roomCode = Math.random().toString(36).substring(2, 8).toUpperCase();
+                peer = new Peer('cskov-' + roomCode);
+            }
+
+            peer.on('open', (id) => {
+                peerReady = true;
+                if (!targetRoom) {
+                    setStatus('✅ Sala criada! Código: ' + roomCode, '#006400');
+                    // Show room code in HUD
+                    const el = document.getElementById('room-code-hud');
+                    if (el) { el.textContent = '🔑 Sala: ' + roomCode; el.style.display = 'block'; }
+                } else {
+                    connectToHost(roomCode);
+                }
+            });
+
+            // Someone connecting to us
+            peer.on('connection', (conn) => {
+                setupConn(conn);
+                conn.on('open', () => {
+                    const peers = Array.from(connections.keys());
+                    conn.send({ type: 'WELCOME', existingPeers: peers, roomCode });
+                    broadcast({ type: 'PEER_JOINED', peerId: conn.peer }, conn.peer);
+                    connections.set(conn.peer, conn);
+                    updateOnlineCount();
+                });
+            });
+
+            peer.on('error', (err) => {
+                if (err.type === 'unavailable-id') {
+                    peer.destroy();
+                    roomCode = Math.random().toString(36).substring(2, 8).toUpperCase();
+                    peer = new Peer('cskov-' + roomCode);
+                    peer.on('open', () => {
+                        peerReady = true;
+                        setStatus('✅ Sala: ' + roomCode, '#006400');
+                        const el = document.getElementById('room-code-hud');
+                        if (el) { el.textContent = '🔑 Sala: ' + roomCode; el.style.display = 'block'; }
+                    });
+                } else {
+                    setStatus('⚠️ Erro P2P. Jogando solo.', '#8b0000');
+                }
+            });
+        }
+
+        function connectToHost(code) {
+            const conn = peer.connect('cskov-' + code, { reliable: false, serialization: 'json' });
+            conn.on('open', () => {
+                setupConn(conn);
+                connections.set(conn.peer, conn);
+                conn.send({ type: 'HELLO', name: myName });
+                setStatus('✅ Conectado à sala: ' + code, '#006400');
+                const el = document.getElementById('room-code-hud');
+                if (el) { el.textContent = '🔑 Sala: ' + code; el.style.display = 'block'; }
+                updateOnlineCount();
+            });
+            conn.on('error', () => setStatus('❌ Sala não encontrada: ' + code, '#8b0000'));
+        }
+
+        function setupConn(conn) {
+            conn.on('data', (data) => handleMsg(data, conn.peer));
+            conn.on('close', () => {
+                connections.delete(conn.peer);
+                remotePlayers.delete(conn.peer);
+                updateOnlineCount();
+                addChatMessage('Sistema', 'Um jogador saiu.', '#8b0000');
+            });
+            conn.on('error', () => { connections.delete(conn.peer); remotePlayers.delete(conn.peer); updateOnlineCount(); });
+        }
+
+        function handleMsg(data, fromId) {
+            switch (data.type) {
+                case 'WELCOME':
+                    data.existingPeers.forEach(pid => {
+                        if (!connections.has(pid)) {
+                            const c = peer.connect(pid, { reliable: false, serialization: 'json' });
+                            c.on('open', () => { setupConn(c); connections.set(pid, c); c.send({ type: 'HELLO', name: myName }); updateOnlineCount(); });
+                        }
+                    });
+                    break;
+                case 'PEER_JOINED':
+                    if (!connections.has(data.peerId)) {
+                        const c = peer.connect(data.peerId, { reliable: false, serialization: 'json' });
+                        c.on('open', () => { setupConn(c); connections.set(data.peerId, c); c.send({ type: 'HELLO', name: myName }); updateOnlineCount(); });
+                    }
+                    break;
+                case 'HELLO':
+                    addChatMessage('Sistema', (data.name || fromId) + ' entrou!', '#006400');
+                    if (!remotePlayers.has(fromId)) remotePlayers.set(fromId, { id: fromId, x: player.x, y: player.y, hp: 100, name: data.name || fromId });
+                    updateOnlineCount();
+                    break;
+                case 'PLAYER_UPDATE':
+                    remotePlayers.set(fromId, { ...data, id: fromId });
+                    break;
+                case 'BULLET':
+                    if (currentState === GAME_STATE.PLAYING)
+                        bullets.push(new Bullet(data.x, data.y, data.angle, data.faction, data.damage, data.speed, false));
+                    break;
+                case 'CHAT':
+                    addChatMessage(data.name, data.msg, '#333');
+                    break;
+            }
+        }
+
+        function broadcast(data, exceptId) {
+            connections.forEach((conn, id) => { if (id !== exceptId && conn.open) conn.send(data); });
+        }
+
+        function sendToAll(data) {
+            connections.forEach(conn => { if (conn.open) conn.send(data); });
+        }
+
+        function updateOnlineCount() {
+            const el = document.getElementById('online-count');
+            if (el) el.textContent = connections.size + 1;
+        }
+
+        function sendPlayerUpdate() {
+            if (!peerReady || currentState !== GAME_STATE.PLAYING || connections.size === 0) return;
+            sendToAll({
+                type: 'PLAYER_UPDATE',
+                x: player.x, y: player.y, angle: player.angle, hp: player.hp,
+                faction: player.faction, color: player.color, name: myName,
+                weapon: player.weapon.name, stanceSide: player.stanceSide,
+                gunLength: player.weapon.type === 'Pistol' ? 15 : 28,
+            });
+        }
+
+        function addChatMessage(name, msg, color) {
+            const box = document.getElementById('chat-messages');
+            if (!box) return;
+            const div = document.createElement('div');
+            div.style.color = color || '#333';
+            div.innerHTML = `<b>${name}:</b> ${msg.replace(/</g, '&lt;')}`;
+            box.appendChild(div);
+            box.scrollTop = box.scrollHeight;
+        }
+
+        function sendChat() {
+            const input = document.getElementById('chat-input');
+            if (!input || !input.value.trim()) return;
+            const msg = input.value.trim();
+            input.value = '';
+            addChatMessage(myName, msg, '#1a3300');
+            sendToAll({ type: 'CHAT', name: myName, msg });
+        }
+
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') {
+                const ci = document.getElementById('chat-input');
+                if (document.activeElement === ci) { sendChat(); return; }
+                if (currentState === GAME_STATE.PLAYING) ci.focus();
+            }
+        });
+
+        setInterval(sendPlayerUpdate, 50);
+
+        // Patch shoot -> envia bala para todos
+        const _origShoot = Player.prototype.shoot;
+        Player.prototype.shoot = function () {
+            _origShoot.call(this);
+            if (!peerReady || connections.size === 0) return;
+            const b = bullets[bullets.length - 1];
+            if (b) sendToAll({ type: 'BULLET', x: b.x, y: b.y, angle: Math.atan2(b.vy, b.vx), faction: this.faction, damage: b.damage, speed: Math.hypot(b.vx, b.vy) });
+        };
+
+        // Patch draw -> renderiza jogadores remotos com nick
+        const _origDraw = draw;
+        draw = function () {
+            _origDraw();
+            if (currentState !== GAME_STATE.PLAYING || remotePlayers.size === 0) return;
+            let tx = player.x, ty = player.y;
+            if (player.usingBinoculars) { tx += (worldMouse.x - player.x) * 0.5; ty += (worldMouse.y - player.y) * 0.5; }
+            let cx = Math.max(0, Math.min(tx - canvas.width / 2, WORLD_SIZE - canvas.width));
+            let cy = Math.max(0, Math.min(ty - canvas.height / 2, WORLD_SIZE - canvas.height));
+            ctx.save();
+            ctx.translate(-cx, -cy);
+            remotePlayers.forEach(rp => {
+                if (!rp || rp.hp <= 0) return;
+                const rc = rp.color || (rp.faction === 'PMC' ? '#1a3300' : '#4d0000');
+                const sy = 8 * (rp.stanceSide || 1);
+                const gl = rp.gunLength || 15;
+                ctx.save();
+                ctx.translate(rp.x, rp.y);
+                ctx.rotate(rp.angle || 0);
+                sketchCircle(0, 0, 18, 2, 2, rc);
+                ctx.strokeStyle = '#444'; ctx.lineWidth = 4;
+                ctx.beginPath(); ctx.moveTo(13, sy); ctx.lineTo(13 + gl, sy); ctx.stroke();
+                ctx.fillStyle = rc; ctx.strokeStyle = '#111'; ctx.lineWidth = 1;
+                ctx.beginPath(); ctx.arc(16, sy, 6, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+                if (gl > 15) { ctx.beginPath(); ctx.arc(13 + gl * 0.5, sy, 6, 0, Math.PI * 2); ctx.fill(); ctx.stroke(); }
+                ctx.restore();
+                // Nick + background
+                const nm = rp.name || '?';
+                ctx.font = 'bold 15px Caveat';
+                const nw = ctx.measureText(nm).width;
+                ctx.fillStyle = 'rgba(255,255,255,0.8)';
+                ctx.fillRect(rp.x - nw / 2 - 4, rp.y - 46, nw + 8, 18);
+                ctx.fillStyle = rc; ctx.textAlign = 'center'; ctx.textBaseline = 'bottom';
+                ctx.fillText(nm, rp.x, rp.y - 28);
+                // HP bar
+                const bx = rp.x - 20, by = rp.y - 27;
+                ctx.fillStyle = '#555'; ctx.fillRect(bx, by, 40, 5);
+                const hp = Math.max(0, (rp.hp || 0) / 100);
+                ctx.fillStyle = hp > 0.5 ? '#22aa22' : hp > 0.25 ? '#ffaa00' : '#cc0000';
+                ctx.fillRect(bx, by, 40 * hp, 5);
+            });
+            ctx.restore();
+        };
+
+        // Patch startGame -> inicializa P2P
+        const _origStartGame = startGame;
+        startGame = function (faction) {
+            const ni = document.getElementById('player-name-input');
+            const ri = document.getElementById('room-code-input');
+            myName = (ni && ni.value.trim()) ? ni.value.trim() : ('Jogador' + Math.floor(Math.random() * 1000));
+            const targetRoom = ri && ri.value.trim() ? ri.value.trim().toUpperCase() : null;
+            _origStartGame(faction);
+            document.getElementById('chat-box').style.display = 'block';
+            document.getElementById('player-count-hud').style.display = 'block';
+            updateOnlineCount();
+            addChatMessage('Sistema', 'Você entrou como ' + myName + ' (' + faction + ')', '#006400');
+            setStatus('⏳ Conectando P2P...', '#555');
+            initPeer(targetRoom);
+        };
+
+    </script>
+</body>
+
+</html>
+
         let myName = 'Jogador';
         let remotePlayers = new Map(); // id -> {x, y, angle, hp, faction, color, name, weapon, stanceSide, gunLength}
         let socket = null;
