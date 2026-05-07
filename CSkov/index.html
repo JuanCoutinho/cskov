@@ -73,6 +73,14 @@
             filter: blur(0.5px);
         }
 
+        /* Fallback para menu se Tailwind falhar */
+        #start-screen {
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+        }
+
         /* Animação de impacto */
         .show-kill {
             transform: translate(-50%, -50%) scale(1.5) !important;
@@ -94,6 +102,7 @@
             <div class="flex flex-col md:flex-row gap-8 justify-center">
                 <!-- Botão PMC -->
                 <button onclick="startGame('PMC')"
+                    style="min-width: 320px;"
                     class="sketch-box p-6 w-80 text-left hover:bg-gray-200 transition-colors cursor-pointer group">
                     <h3
                         class="text-4xl font-bold sketch-text text-[#1a3300] group-hover:scale-105 transition-transform">
@@ -104,6 +113,7 @@
 
                 <!-- Botão SCAV -->
                 <button onclick="startGame('SCAV')"
+                    style="min-width: 320px;"
                     class="sketch-box p-6 w-80 text-left hover:bg-gray-200 transition-colors cursor-pointer group">
                     <h3
                         class="text-4xl font-bold sketch-text text-[#4d0000] group-hover:scale-105 transition-transform">
@@ -390,6 +400,7 @@
         // Mude o nome para bater com o que está no Bullet.update
         function showKillMessage() {
             const el = document.getElementById('kill-notification');
+            if (!el) return;
             el.classList.add('show-kill');
 
             // Treme a tela
@@ -736,6 +747,7 @@
 
         function triggerKillUI() {
             const el = document.getElementById('kill-notification');
+            if (!el) return;
             el.classList.add('show-kill');
 
             // Treme a tela um pouco para dar impacto (opcional)
@@ -1162,21 +1174,27 @@
         }
 
         function startGame(factionChoice) {
-            document.getElementById('start-screen').classList.add('hidden');
-            document.getElementById('ui-layer').classList.remove('hidden');
+            const startScreen = document.getElementById('start-screen');
+            const uiLayer = document.getElementById('ui-layer');
+            if (startScreen) startScreen.classList.add('hidden');
+            if (uiLayer) uiLayer.classList.remove('hidden');
 
             player.faction = factionChoice;
             player.isTraitor = false;
 
             if (factionChoice === 'PMC') {
                 player.color = '#1a3300';
-                factionDisplay.innerText = "Facção: PMC (Hostil a todos)";
-                factionDisplay.className = "text-xl sketch-text font-bold text-[#1a3300]";
+                if (factionDisplay) {
+                    factionDisplay.innerText = "Facção: PMC (Hostil a todos)";
+                    factionDisplay.className = "text-xl sketch-text font-bold text-[#1a3300]";
+                }
                 player.equipWeapon("Pistola PM");
             } else {
                 player.color = '#4d0000';
-                factionDisplay.innerText = "Facção: SCAV (Aliado aos Scavs)";
-                factionDisplay.className = "text-xl sketch-text font-bold text-[#4d0000]";
+                if (factionDisplay) {
+                    factionDisplay.innerText = "Facção: SCAV (Aliado aos Scavs)";
+                    factionDisplay.className = "text-xl sketch-text font-bold text-[#4d0000]";
+                }
                 let scavGuns = ["Pistola PM", "Shotgun MP-133"];
                 player.equipWeapon(scavGuns[Math.floor(Math.random() * scavGuns.length)]);
             }
@@ -1193,6 +1211,7 @@
 
             generateMap();
             currentState = GAME_STATE.PLAYING;
+            console.log("Game Started as " + factionChoice);
         }
 
         function generateMap() {
@@ -1212,6 +1231,9 @@
             loots.push({ x: WORLD_SIZE / 2 - 50, y: WORLD_SIZE / 2, name: "Coquetel Molotov", value: 5000, color: "#ff4500", isWeapon: false });
             loots.push({ x: WORLD_SIZE / 2 + 50, y: WORLD_SIZE / 2, name: "Bomba de Fumaça", value: 4000, color: "#808080", isWeapon: false });
             loots.push({ x: WORLD_SIZE / 2, y: WORLD_SIZE / 2 - 50, name: "Binóculos", value: 15000, color: "#2f4f4f", isWeapon: false });
+
+            // Spawn AK Dragão de Fogo
+            spawnWeaponDrop(WORLD_SIZE / 2 + 50, WORLD_SIZE / 2 + 50, "AK Dragão de Fogo");
 
             for (let i = 0; i < 8; i++) {
                 let highTier = ["Sniper Mosin", "AK-74U", "Shotgun MP-133"];
@@ -1240,6 +1262,7 @@
 
         function spawnWeaponDrop(x, y, weaponName) {
             let wData = WEAPONS[weaponName];
+            if (!wData) return;
             let v = wData.type === 'Sniper' ? 80000 : (wData.type === 'Rifle' ? 45000 : 25000);
             loots.push({
                 x: x + (Math.random() - 0.5) * 20, y: y + (Math.random() - 0.5) * 20,
@@ -1247,10 +1270,8 @@
             });
         }
 
-        // Spawna a arma lendária perto do centro do mapa
-        spawnWeaponDrop(WORLD_SIZE / 2 + 50, WORLD_SIZE / 2 + 50, "AK Dragão de Fogo");
-
         function updateInventoryUI() {
+            if (!inventoryList) return;
             inventoryList.innerHTML = '';
             if (player.inventory.length === 0) {
                 inventoryList.innerHTML = '<li class="italic text-gray-400">Vazia...</li>';
@@ -1262,23 +1283,29 @@
                     inventoryList.appendChild(li);
                 });
             }
-            lootValueText.innerText = player.totalValue.toLocaleString('pt-BR');
+            if (lootValueText) lootValueText.innerText = player.totalValue.toLocaleString('pt-BR');
             player.updateUI();
         }
 
         function triggerEndGame(state) {
             currentState = state;
-            document.getElementById('ui-layer').classList.add('hidden');
-            endScreen.classList.remove('hidden');
+            const uiLayer = document.getElementById('ui-layer');
+            const endScreen = document.getElementById('end-screen');
+            if (uiLayer) uiLayer.classList.add('hidden');
+            if (endScreen) endScreen.classList.remove('hidden');
 
             if (state === GAME_STATE.GAMEOVER) {
-                endTitle.innerText = "K.I.A.";
-                endTitle.style.color = "#8b0000";
-                endStats.innerText = `Você morreu. Loot (₽ ${player.totalValue.toLocaleString('pt-BR')}) perdido.`;
+                if (endTitle) {
+                    endTitle.innerText = "K.I.A.";
+                    endTitle.style.color = "#8b0000";
+                }
+                if (endStats) endStats.innerText = `Você morreu. Loot (₽ ${player.totalValue.toLocaleString('pt-BR')}) perdido.`;
             } else if (state === GAME_STATE.EXTRACTED) {
-                endTitle.innerText = "EXTRAÍDO COM SUCESSO!";
-                endTitle.style.color = "#006400";
-                endStats.innerText = `Você sobreviveu com ₽ ${player.totalValue.toLocaleString('pt-BR')} em itens.`;
+                if (endTitle) {
+                    endTitle.innerText = "EXTRAÍDO COM SUCESSO!";
+                    endTitle.style.color = "#006400";
+                }
+                if (endStats) endStats.innerText = `Você sobreviveu com ₽ ${player.totalValue.toLocaleString('pt-BR')} em itens.`;
             }
         }
 
@@ -1308,6 +1335,7 @@
         }
 
         function draw() {
+            if (!ctx) return;
             ctx.fillStyle = '#f4f4f0';
             ctx.fillRect(0, 0, canvas.width, canvas.height);
             ctx.save();
@@ -1355,7 +1383,7 @@
             }
 
             for (let corpse of corpses) {
-                if (corpse.x > camX - 50 && corpse.x < camX + canvas.width + 50 && corpse.y > camY - 50 && corpse.y < camY + canvas.height + 50) {
+                if (corpse.x > camX - 50 && corpse.x < corpse.x + 50 && corpse.y > camY - 50 && corpse.y < camY + canvas.height + 50) {
                     ctx.save(); ctx.translate(corpse.x, corpse.y); ctx.rotate(corpse.angle);
                     let color = corpse.color;
                     sketchCircle(0, 0, 18, 2, 2, color);
@@ -1473,6 +1501,7 @@
 
         generateMap();
         gameLoop();
+        console.log("Game Engine Ready");
 
     </script>
 </body>
