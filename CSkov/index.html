@@ -1,0 +1,1480 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Tarkov: Sketch Survival - GORE EDITION</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Caveat:wght@400;700&display=swap');
+
+        body {
+            margin: 0;
+            overflow: hidden;
+            background-color: #f4f4f0;
+            /* Cor de papel */
+            font-family: 'Caveat', cursive;
+            /* Fonte estilo escrita à mão */
+            user-select: none;
+        }
+
+        canvas {
+            display: block;
+            cursor: crosshair;
+        }
+
+        #ui-layer {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+        }
+
+        .sketch-box {
+            background: rgba(255, 255, 255, 0.8);
+            border: 2px solid #222;
+            border-radius: 2px 255px 3px 25px / 255px 5px 225px 3px;
+            box-shadow: 2px 2px 5px rgba(0, 0, 0, 0.1);
+        }
+
+        .sketch-text {
+            color: #222;
+            text-shadow: 1px 1px 0px rgba(0, 0, 0, 0.1);
+        }
+
+        /* Ocultar elementos nativamente */
+        .hidden {
+            display: none !important;
+        }
+
+        /* Efeito de Fonte Sangrenta e Grande */
+        #kill-notification {
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%) scale(0);
+            color: #8b0000;
+            /* Vermelho sangue escuro */
+            font-size: 120px;
+            font-weight: 900;
+            text-transform: uppercase;
+            pointer-events: none;
+            z-index: 100;
+            /* Sombras que simulam sangue espalhado */
+            text-shadow:
+                0 0 10px #ff0000,
+                5px 5px 0px #4d0000,
+                -3px 10px 15px rgba(255, 0, 0, 0.5);
+            opacity: 0;
+            transition: all 0.1s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+            filter: blur(0.5px);
+        }
+
+        /* Animação de impacto */
+        .show-kill {
+            transform: translate(-50%, -50%) scale(1.5) !important;
+            opacity: 1 !important;
+        }
+    </style>
+</head>
+
+<body oncontextmenu="return false;"> <!-- Bloqueia o menu do botão direito -->
+    <div id="kill-notification" class="sketch-text">KILL</div>
+    <canvas id="gameCanvas"></canvas>
+
+    <!-- Start Menu Screen -->
+    <div id="start-screen"
+        class="fixed inset-0 bg-[#f4f4f0] bg-opacity-90 z-50 flex flex-col justify-center items-center pointer-events-auto">
+        <div class="sketch-box p-12 max-w-4xl text-center">
+            <h1 class="text-6xl font-bold sketch-text mb-4 text-red-800">TARKOV: GORE SKETCH</h1>
+            <h2 class="text-3xl sketch-text mb-8 text-gray-800">Escolha sua Facção para Iniciar:</h2>
+            <div class="flex flex-col md:flex-row gap-8 justify-center">
+                <!-- Botão PMC -->
+                <button onclick="startGame('PMC')"
+                    class="sketch-box p-6 w-80 text-left hover:bg-gray-200 transition-colors cursor-pointer group">
+                    <h3
+                        class="text-4xl font-bold sketch-text text-[#1a3300] group-hover:scale-105 transition-transform">
+                        Jogar como PMC</h3>
+                    <p class="text-xl sketch-text mt-4 text-gray-700"><b>Mercenário.</b><br>Todos no mapa são hostis
+                        (tanto Scavs quanto PMCs rivais). Você é verde-escuro e atira para matar.</p>
+                </button>
+
+                <!-- Botão SCAV -->
+                <button onclick="startGame('SCAV')"
+                    class="sketch-box p-6 w-80 text-left hover:bg-gray-200 transition-colors cursor-pointer group">
+                    <h3
+                        class="text-4xl font-bold sketch-text text-[#4d0000] group-hover:scale-105 transition-transform">
+                        Jogar como SCAV</h3>
+                    <p class="text-xl sketch-text mt-4 text-gray-700"><b>Sobrevivente Local.</b><br>Outros Scavs
+                        vermelhos são pacíficos com você (a menos que você atire neles primeiro). Sobreviva à guerra.
+                    </p>
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- HUD Layer -->
+    <div id="ui-layer" class="hidden p-6 flex flex-col justify-between">
+
+        <!-- Top HUD -->
+        <div class="flex justify-between items-start">
+            <div class="sketch-box p-4 flex flex-col gap-2">
+                <h1 class="text-3xl font-bold sketch-text mb-2 text-red-800">TARKOV: GORE SKETCH</h1>
+                <div class="text-xl sketch-text font-bold" id="faction-display">Facção: Escolhendo...</div>
+                <div class="text-xl sketch-text mt-2">Vida: <span id="hp-text">100/100</span></div>
+                <div class="w-48 h-4 border-2 border-black rounded relative overflow-hidden bg-white">
+                    <div id="hp-bar" class="h-full bg-red-800 transition-all duration-200" style="width: 100%;"></div>
+                </div>
+                <div class="text-xl sketch-text mt-2 font-bold text-blue-900" id="weapon-text">Arma: Pistola PM</div>
+                <div class="text-xl sketch-text" id="ammo-text">Munição: 8/8</div>
+                <div class="text-xl sketch-text mt-2 font-bold text-orange-700" id="grenade-text">Granada: Nenhuma</div>
+            </div>
+
+            <div class="sketch-box p-4 text-right">
+                <h2 class="text-2xl font-bold sketch-text">Objetivo:</h2>
+                <p class="text-xl sketch-text text-gray-700">Encontre Loot e Extraia.</p>
+                <p class="text-lg sketch-text text-gray-600 mt-2">
+                    WASD: Mover | M.Esq: Atirar | M.Dir: Mirar Granada<br>
+                    Q: Arma | 4: Granada | C: Postura<br>
+                    R: Recarregar | H: Curar | B: Binóculos
+                </p>
+            </div>
+        </div>
+
+        <!-- Center Alerts -->
+        <div class="flex justify-center items-center flex-1">
+            <div id="extract-timer"
+                class="hidden sketch-box p-6 text-4xl font-bold sketch-text animate-pulse text-center text-green-700">
+                Extraindo em: <span id="extract-time">3.0</span>s...
+            </div>
+            <div id="interaction-prompt" class="hidden sketch-box p-4 text-2xl font-bold sketch-text">
+                Pressione [E] para pegar
+            </div>
+        </div>
+
+        <!-- Bottom HUD: Inventory -->
+        <div class="flex justify-start">
+            <div class="sketch-box p-4 w-96">
+                <h3 class="text-2xl font-bold sketch-text mb-2">Mochila (Loot)</h3>
+                <ul id="inventory-list"
+                    class="text-xl sketch-text list-disc list-inside h-32 overflow-hidden text-gray-700">
+                    <li class="italic text-gray-400">Vazia...</li>
+                </ul>
+                <div class="mt-2 text-xl font-bold sketch-text border-t-2 border-black pt-2">
+                    Valor: ₽ <span id="loot-value">0</span>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Game Over / Victory Screen -->
+    <div id="end-screen"
+        class="hidden fixed inset-0 bg-[#f4f4f0] z-50 flex flex-col justify-center items-center pointer-events-auto">
+        <div class="sketch-box p-12 max-w-2xl text-center">
+            <h1 id="end-title" class="text-6xl font-bold sketch-text mb-6">M.I.A. (Desaparecido)</h1>
+            <p id="end-stats" class="text-3xl sketch-text mb-8">Você perdeu todo o seu loot.</p>
+            <button onclick="location.reload()"
+                class="sketch-box px-8 py-4 text-3xl font-bold sketch-text hover:bg-gray-200 transition-colors cursor-pointer text-red-900">
+                Tentar Novamente
+            </button>
+        </div>
+    </div>
+
+    <!-- Audio Elements for SFX -->
+    <audio id="sfx-pistol" src="tiro-de-pistola.mp3"></audio>
+    <audio id="sfx-ak" src="ak.mp3"></audio>
+    <audio id="sfx-shotgun" src="shotgun_blast-jim_rogers-1914772763.mp3"></audio>
+    <audio id="sfx-sniper" src="heavy-sniper-shot.mp3"></audio>
+    <audio id="sfx-explosion" src="grenade-explosion.mp3"></audio>
+    <audio id="sfx-flashbang" src="csgo-flashbang.mp3"></audio>
+
+    <!-- YouTube Music Player -->
+    <div id="youtube-player" style="display:none"></div>
+    <script src="https://youtu.be/1lJKVaRf0og?si=ignAuATGRPfo81Tl"></script>
+
+    <script>
+        // Sound Management
+        let youtubePlayer;
+        function onYouTubeIframeAPIReady() {
+            youtubePlayer = new YT.Player('youtube-player', {
+                height: '0',
+                width: '0',
+                videoId: 'LvCKnpdcW-w',
+                playerVars: {
+                    'autoplay': 0,
+                    'loop': 1,
+                    'playlist': 'LvCKnpdcW-w'
+                }
+            });
+        }
+
+        function playSFX(id) {
+            const audio = document.getElementById(id);
+            if (audio) {
+                const clone = audio.cloneNode();
+                clone.volume = 0.5;
+                clone.play();
+            }
+        }
+
+        const SFX_MAP = {
+            "Pistola PM": "sfx-pistol",
+            "AK-74U": "sfx-ak",
+            "Shotgun MP-133": "sfx-shotgun",
+            "Sniper Mosin": "sfx-sniper"
+        };
+
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+
+        // UI Elements
+        const hpText = document.getElementById('hp-text');
+        const hpBar = document.getElementById('hp-bar');
+        const ammoText = document.getElementById('ammo-text');
+        const weaponText = document.getElementById('weapon-text');
+        const grenadeText = document.getElementById('grenade-text');
+        const inventoryList = document.getElementById('inventory-list');
+        const lootValueText = document.getElementById('loot-value');
+        const extractTimerUI = document.getElementById('extract-timer');
+        const extractTimeText = document.getElementById('extract-time');
+        const interactionPrompt = document.getElementById('interaction-prompt');
+        const endScreen = document.getElementById('end-screen');
+        const endTitle = document.getElementById('end-title');
+        const endStats = document.getElementById('end-stats');
+        const factionDisplay = document.getElementById('faction-display');
+
+        function resize() {
+            canvas.width = window.innerWidth;
+            canvas.height = window.innerHeight;
+        }
+        window.addEventListener('resize', resize);
+        resize();
+
+        // Game State
+        const GAME_STATE = { MENU: 0, PLAYING: 1, GAMEOVER: 2, EXTRACTED: 3 };
+        let currentState = GAME_STATE.MENU;
+
+        // World Settings
+        const WORLD_SIZE = 3000;
+        const TILE_SIZE = 50;
+
+        // Input tracking
+        const keys = { w: false, a: false, s: false, d: false, r: false, h: false, c: false, '4': false, b: false };
+        const mouse = { x: 0, y: 0, down: false, rightDown: false };
+        let worldMouse = { x: 0, y: 0 };
+        let qPressed = false;
+        let cPressed = false;
+        let fourPressed = false;
+        let bPressed = false;
+
+        window.addEventListener('keydown', (e) => {
+            const key = e.key.toLowerCase();
+            if (keys.hasOwnProperty(key)) keys[key] = true;
+
+            // Troca de arma com 'Q'
+            if (key === 'q' && !qPressed && currentState === GAME_STATE.PLAYING) {
+                qPressed = true;
+                player.swapWeapon();
+            }
+
+            // Troca de Granada com '4'
+            if (key === '4' && !fourPressed && currentState === GAME_STATE.PLAYING) {
+                fourPressed = true;
+                player.cycleGrenade();
+            }
+
+            // Mudança de postura com 'C'
+            if (key === 'c' && !cPressed && currentState === GAME_STATE.PLAYING) {
+                cPressed = true;
+                player.stanceSide *= -1;
+            }
+
+            // Alternar Binóculos com 'B'
+            if (key === 'b' && !bPressed && currentState === GAME_STATE.PLAYING) {
+                bPressed = true;
+                if (player.inventory.includes("Binóculos")) {
+                    player.usingBinoculars = !player.usingBinoculars;
+                }
+            }
+        });
+        window.addEventListener('keyup', (e) => {
+            const key = e.key.toLowerCase();
+            if (keys.hasOwnProperty(key)) keys[key] = false;
+            if (key === 'q') qPressed = false;
+            if (key === '4') fourPressed = false;
+            if (key === 'c') cPressed = false;
+            if (key === 'b') bPressed = false;
+        });
+        window.addEventListener('mousemove', (e) => {
+            mouse.x = e.clientX;
+            mouse.y = e.clientY;
+        });
+        window.addEventListener('mousedown', (e) => {
+            if (e.button === 0) mouse.down = true;
+            if (e.button === 2) mouse.rightDown = true;
+        });
+        window.addEventListener('mouseup', (e) => {
+            if (e.button === 0) mouse.down = false;
+            if (e.button === 2) mouse.rightDown = false;
+        });
+
+        // WEAPONS DATABASE
+        const WEAPONS = {
+            "Pistola PM": { name: "Pistola PM", type: "Pistol", damage: 22, fireRate: 20, spread: 0.05, maxAmmo: 8, reloadTime: 60, pellets: 1, speed: 18, color: "#444", skinName: "Padrão" },
+            "AK-74U": { name: "AK-74U", type: "Rifle", damage: 28, fireRate: 7, spread: 0.12, maxAmmo: 30, reloadTime: 120, pellets: 1, speed: 22, color: "#5c3a21", skinName: "Madeira" },
+            "Shotgun MP-133": { name: "Shotgun MP-133", type: "Shotgun", damage: 15, fireRate: 50, spread: 0.25, maxAmmo: 6, reloadTime: 150, pellets: 7, speed: 16, color: "#222", skinName: "Padrão" },
+            "Sniper Mosin": { name: "Sniper Mosin", type: "Sniper", damage: 95, fireRate: 90, spread: 0.01, maxAmmo: 5, reloadTime: 180, pellets: 1, speed: 40, color: "#3d2b1f", skinName: "Padrão" },
+
+            // Skins Especiais
+            "AK-74U Ouro": { name: "AK-74U Ouro", type: "Rifle", damage: 32, fireRate: 6, spread: 0.10, maxAmmo: 30, reloadTime: 100, pellets: 1, speed: 24, color: "#d4af37", skinName: "Ouro" },
+            "Mosin Ártica": { name: "Mosin Ártica", type: "Sniper", damage: 100, fireRate: 85, spread: 0.005, maxAmmo: 5, reloadTime: 170, pellets: 1, speed: 45, color: "#00ffff", skinName: "Gelo" },
+
+            // A LENDÁRIA
+            "AK Dragão de Fogo": {
+                name: "AK Dragão de Fogo",
+                type: "Rifle", damage: 45, fireRate: 5, spread: 0.20, maxAmmo: 45, reloadTime: 130,
+                pellets: 2, speed: 12, color: "#ff4500", skinName: "Dragão", isFire: true
+            }
+
+        };
+
+        // SKETCH DRAWING UTILS
+        function sketchRect(x, y, w, h, thickness = 2, passes = 2, color = '#111') {
+            ctx.strokeStyle = color;
+            ctx.lineWidth = thickness;
+            for (let i = 0; i < passes; i++) {
+                ctx.beginPath();
+                ctx.moveTo(x + (Math.random() - 0.5) * 4, y + (Math.random() - 0.5) * 4);
+                ctx.lineTo(x + w + (Math.random() - 0.5) * 4, y + (Math.random() - 0.5) * 4);
+                ctx.lineTo(x + w + (Math.random() - 0.5) * 4, y + h + (Math.random() - 0.5) * 4);
+                ctx.lineTo(x + (Math.random() - 0.5) * 4, y + h + (Math.random() - 0.5) * 4);
+                ctx.closePath();
+                ctx.stroke();
+            }
+        }
+
+        function sketchCircle(x, y, radius, thickness = 2, passes = 2, color = '#111') {
+            ctx.strokeStyle = color;
+            ctx.lineWidth = thickness;
+            for (let p = 0; p < passes; p++) {
+                ctx.beginPath();
+                for (let i = 0; i <= Math.PI * 2; i += 0.2) {
+                    let r = radius + (Math.random() - 0.5) * 3;
+                    let px = x + Math.cos(i) * r;
+                    let py = y + Math.sin(i) * r;
+                    if (i === 0) ctx.moveTo(px, py);
+                    else ctx.lineTo(px, py);
+                }
+                ctx.closePath();
+                ctx.stroke();
+            }
+        }
+
+        function sketchLine(x1, y1, x2, y2, thickness = 2, passes = 2, color = '#111', dash = []) {
+            ctx.strokeStyle = color;
+            ctx.lineWidth = thickness;
+            ctx.setLineDash(dash);
+            for (let i = 0; i < passes; i++) {
+                ctx.beginPath();
+                ctx.moveTo(x1 + (Math.random() - 0.5) * 3, y1 + (Math.random() - 0.5) * 3);
+                ctx.lineTo(x2 + (Math.random() - 0.5) * 3, y2 + (Math.random() - 0.5) * 3);
+                ctx.stroke();
+            }
+            ctx.setLineDash([]);
+        }
+
+
+        // Mude o nome para bater com o que está no Bullet.update
+        function showKillMessage() {
+            const el = document.getElementById('kill-notification');
+            el.classList.add('show-kill');
+
+            // Treme a tela
+            canvas.style.transform = `translate(${(Math.random() - 0.5) * 10}px, ${(Math.random() - 0.5) * 10}px)`;
+
+            setTimeout(() => {
+                el.classList.remove('show-kill');
+                canvas.style.transform = `translate(0, 0)`;
+            }, 800);
+        }
+        // CLASSES
+        class Player {
+            constructor() {
+                this.x = WORLD_SIZE / 2;
+                this.y = WORLD_SIZE / 2;
+                this.radius = 18;
+                this.speed = 4;
+                this.maxHp = 100;
+                this.hp = 100;
+                this.angle = 0;
+
+                this.faction = 'PMC';
+                this.color = '#1a3300';
+                this.isTraitor = false;
+
+                this.weapon = WEAPONS["Pistola PM"];
+                this.ammo = this.weapon.maxAmmo;
+                this.shootCooldown = 0;
+                this.reloading = false;
+                this.reloadTimer = 0;
+                this.stanceSide = 1;
+
+                this.activeGrenade = null; // 'Coquetel Molotov' ou 'Bomba de Fumaça'
+                this.usingBinoculars = false;
+
+                this.inventory = [];
+                this.totalValue = 0;
+                this.extractingTimer = 0;
+                this.lootMessageTimeout = null;
+            }
+
+            equipWeapon(weaponName) {
+                if (WEAPONS[weaponName]) {
+                    this.weapon = WEAPONS[weaponName];
+                    this.ammo = this.weapon.maxAmmo;
+                    this.reloading = false;
+                    this.shootCooldown = 30;
+                    this.updateUI();
+                }
+            }
+
+            swapWeapon() {
+                let weaponNames = Object.keys(WEAPONS);
+                let availableGuns = [this.faction === 'SCAV' && !this.inventory.includes("Pistola PM") ? this.weapon.name : "Pistola PM"];
+                if (!availableGuns.includes(this.weapon.name)) availableGuns.push(this.weapon.name);
+
+                this.inventory.forEach(item => {
+                    if (weaponNames.includes(item) && !availableGuns.includes(item)) availableGuns.push(item);
+                });
+
+                let currentIndex = availableGuns.indexOf(this.weapon.name);
+                let nextIndex = (currentIndex + 1) % availableGuns.length;
+                this.equipWeapon(availableGuns[nextIndex]);
+            }
+
+            cycleGrenade() {
+                let available = [];
+                if (this.inventory.includes("Coquetel Molotov")) available.push("Coquetel Molotov");
+                if (this.inventory.includes("Bomba de Fumaça")) available.push("Bomba de Fumaça");
+
+                if (available.length === 0) {
+                    this.activeGrenade = null;
+                } else if (!this.activeGrenade || !available.includes(this.activeGrenade)) {
+                    this.activeGrenade = available[0];
+                } else {
+                    let idx = available.indexOf(this.activeGrenade);
+                    this.activeGrenade = available[(idx + 1) % available.length];
+                }
+                this.updateUI();
+            }
+
+            throwGrenade() {
+                let idx = this.inventory.indexOf(this.activeGrenade);
+                if (idx !== -1) {
+                    this.inventory.splice(idx, 1);
+
+                    let type = this.activeGrenade === 'Coquetel Molotov' ? 'MOLOTOV' : 'SMOKE';
+                    let val = type === 'MOLOTOV' ? 5000 : 4000;
+                    this.totalValue = Math.max(0, this.totalValue - val);
+
+                    throwables.push(new Throwable(this.x, this.y, worldMouse.x, worldMouse.y, type));
+                    this.shootCooldown = 40; // Tempo de animação/recuperação
+
+                    this.cycleGrenade(); // Atualiza a seleção (remove se zerou)
+                    updateInventoryUI();
+                }
+            }
+
+            update() {
+                if (currentState !== GAME_STATE.PLAYING) return;
+
+                // Movement
+                let dx = 0; let dy = 0;
+                if (keys.w) dy -= 1;
+                if (keys.s) dy += 1;
+                if (keys.a) dx -= 1;
+                if (keys.d) dx += 1;
+
+                if (dx !== 0 && dy !== 0) {
+                    const length = Math.sqrt(dx * dx + dy * dy);
+                    dx /= length;
+                    dy /= length;
+                }
+
+                let nextX = this.x + dx * this.speed;
+                let nextY = this.y + dy * this.speed;
+
+                // Collision with walls
+                let collideX = false;
+                let collideY = false;
+                for (let wall of walls) {
+                    if (circleRectCollide(nextX, this.y, this.radius, wall)) collideX = true;
+                    if (circleRectCollide(this.x, nextY, this.radius, wall)) collideY = true;
+                }
+
+                if (!collideX && nextX > this.radius && nextX < WORLD_SIZE - this.radius) this.x = nextX;
+                if (!collideY && nextY > this.radius && nextY < WORLD_SIZE - this.radius) this.y = nextY;
+
+                // Aiming
+                worldMouse.x = mouse.x - canvas.width / 2 + this.x;
+                worldMouse.y = mouse.y - canvas.height / 2 + this.y;
+                this.angle = Math.atan2(worldMouse.y - this.y, worldMouse.x - this.x);
+
+                // Cooldown
+                if (this.shootCooldown > 0) this.shootCooldown--;
+
+                // Relogar Arma
+                if (keys.r && !this.reloading && this.ammo < this.weapon.maxAmmo) {
+                    this.reloading = true;
+                    this.reloadTimer = this.weapon.reloadTime;
+                }
+
+                if (this.reloading) {
+                    this.reloadTimer--;
+                    if (this.reloadTimer <= 0) {
+                        this.ammo = this.weapon.maxAmmo;
+                        this.reloading = false;
+                    }
+                }
+
+                // AÇÃO PRIMÁRIA: Tiro vs Lançar Granada
+                if (mouse.rightDown && this.activeGrenade) {
+                    // MODO MIRA DE GRANADA
+                    if (mouse.down && this.shootCooldown <= 0) {
+                        this.throwGrenade();
+                        mouse.down = false; // Previne atirar a arma sem querer depois
+                    }
+                } else {
+                    // MODO TIRO NORMAL
+                    if (mouse.down && this.shootCooldown <= 0 && this.ammo > 0 && !this.reloading) {
+                        this.shoot();
+                    }
+                }
+
+                // Healing
+                if (keys.h) {
+                    let medIndex = this.inventory.indexOf("Kit de Sobrevivência");
+                    if (medIndex !== -1 && this.hp < this.maxHp) {
+                        this.inventory.splice(medIndex, 1);
+                        this.hp = Math.min(this.maxHp, this.hp + 50);
+                        this.totalValue = Math.max(0, this.totalValue - 8000);
+                        for (let i = 0; i < 20; i++) particles.push(new Particle(this.x, this.y, '#00cc00'));
+                        updateInventoryUI();
+                        keys.h = false;
+                    }
+                }
+
+                if (this.usingBinoculars && !this.inventory.includes("Binóculos")) {
+                    this.usingBinoculars = false;
+                }
+
+                // Dano no Fogo
+                for (let f of fires) {
+                    if (Math.hypot(this.x - f.x, this.y - f.y) < f.radius) {
+                        if (Math.random() < 0.2) this.takeDamage(1);
+                    }
+                }
+
+                // Looting Automático
+                let lootedSomething = false;
+                let lastLootName = "";
+                let foundGrenade = false;
+
+                for (let i = loots.length - 1; i >= 0; i--) {
+                    let loot = loots[i];
+                    let dist = Math.hypot(this.x - loot.x, this.y - loot.y);
+                    if (dist < 40) {
+                        this.inventory.push(loot.name);
+                        this.totalValue += loot.value;
+                        lastLootName = loot.name;
+
+                        if (loot.name === "Coquetel Molotov" || loot.name === "Bomba de Fumaça") foundGrenade = true;
+
+                        loots.splice(i, 1);
+                        lootedSomething = true;
+                    }
+                }
+
+                if (lootedSomething) {
+                    if (foundGrenade && !this.activeGrenade) this.cycleGrenade(); // Auto-equipa se não tinha
+
+                    updateInventoryUI();
+                    interactionPrompt.innerText = `Coletado: ${lastLootName}`;
+                    interactionPrompt.classList.remove('hidden');
+
+                    if (this.lootMessageTimeout) clearTimeout(this.lootMessageTimeout);
+                    this.lootMessageTimeout = setTimeout(() => {
+                        interactionPrompt.classList.add('hidden');
+                    }, 2000);
+                }
+
+                // Extraction
+                let inExtract = false;
+                for (let ex of extracts) {
+                    if (this.x > ex.x && this.x < ex.x + ex.w && this.y > ex.y && this.y < ex.y + ex.h) {
+                        inExtract = true;
+                        break;
+                    }
+                }
+
+                if (inExtract) {
+                    this.extractingTimer++;
+                    extractTimerUI.classList.remove('hidden');
+                    let timeLeft = (180 - this.extractingTimer) / 60;
+                    extractTimeText.innerText = Math.max(0, timeLeft).toFixed(1);
+                    if (this.extractingTimer >= 180) triggerEndGame(GAME_STATE.EXTRACTED);
+                } else {
+                    this.extractingTimer = 0;
+                    extractTimerUI.classList.add('hidden');
+                }
+
+                this.updateUI();
+            }
+
+            shoot() {
+                let barrelDistX = this.radius + (this.weapon.type === 'Pistol' ? 15 : 25);
+                let barrelDistY = 8 * this.stanceSide;
+                let barrelX = this.x + Math.cos(this.angle) * barrelDistX - Math.sin(this.angle) * barrelDistY;
+                let barrelY = this.y + Math.sin(this.angle) * barrelDistX + Math.cos(this.angle) * barrelDistY;
+
+                for (let i = 0; i < this.weapon.pellets; i++) {
+                    let spread = (Math.random() - 0.5) * this.weapon.spread;
+                    let bullet = new Bullet(barrelX, barrelY, this.angle + spread, this.faction, this.weapon.damage, this.weapon.speed, true);
+                    bullets.push(bullet);
+                }
+
+                // Play SFX
+                playSFX(SFX_MAP[this.weapon.name]);
+
+                this.ammo--;
+                this.shootCooldown = this.weapon.fireRate;
+
+                let recoil = this.weapon.damage > 30 ? 4 : 2;
+                this.x -= Math.cos(this.angle) * recoil;
+                this.y -= Math.sin(this.angle) * recoil;
+
+                for (let i = 0; i < 3; i++) particles.push(new Particle(barrelX, barrelY, '#555'));
+            }
+
+            takeDamage(amount) {
+                this.hp -= amount;
+                for (let i = 0; i < 15; i++) particles.push(new Particle(this.x, this.y, '#9e0000', true));
+                bloodStains.push({ x: this.x, y: this.y, size: Math.random() * 8 + 4 });
+
+                if (this.hp <= 0) {
+                    this.hp = 0;
+                    createCorpse(this.x, this.y, this.angle, this.color);
+                    for (let j = 0; j < 30; j++) particles.push(new Particle(this.x, this.y, '#9e0000', true));
+                    triggerEndGame(GAME_STATE.GAMEOVER);
+                }
+            }
+
+            draw() {
+                if (this.hp <= 0) return;
+                ctx.save();
+                ctx.translate(this.x, this.y);
+                ctx.rotate(this.angle);
+
+                // Corpo
+                sketchCircle(0, 0, this.radius, 2, 2, this.color);
+
+                // Aura de calor se estiver com a AK Dragão
+                if (this.weapon.skinName === "Dragão") {
+                    ctx.strokeStyle = "rgba(255, 69, 0, 0.4)";
+                    ctx.lineWidth = 4;
+                    ctx.beginPath();
+                    ctx.arc(0, 0, this.radius + 5, 0, Math.PI * 2);
+                    ctx.stroke();
+                }
+
+                let sy = 8 * this.stanceSide;
+                let gunLength = this.weapon.type === 'Pistol' ? 15 : 28;
+
+                // Desenho da Arma com a cor da Skin
+                sketchLine(this.radius - 5, sy, this.radius + gunLength, sy, 4, 2, this.weapon.color);
+
+                // MÃOZINHAS CIRCULARES
+                ctx.fillStyle = this.color;
+                ctx.strokeStyle = "#111";
+                ctx.lineWidth = 1;
+
+                // Mão 1 (Gatilho)
+                ctx.beginPath(); ctx.arc(this.radius - 2, sy, 6, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+
+                // Mão 2 (Apoio - apenas armas longas)
+                if (this.weapon.type !== 'Pistol') {
+                    ctx.beginPath(); ctx.arc(this.radius + (gunLength * 0.5), sy, 6, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+                }
+                ctx.restore();
+            }
+
+            updateUI() {
+                hpText.innerText = `${Math.floor(this.hp)}/${this.maxHp}`;
+                hpBar.style.width = `${(this.hp / this.maxHp) * 100}%`;
+                weaponText.innerText = `Arma: ${this.weapon.name}`;
+
+                if (this.reloading) {
+                    ammoText.innerText = `Recarregando...`;
+                    ammoText.classList.add('text-yellow-600');
+                } else {
+                    ammoText.innerText = `Munição: ${this.ammo}/${this.weapon.maxAmmo}`;
+                    ammoText.classList.remove('text-yellow-600');
+                }
+
+                if (this.activeGrenade) {
+                    let count = this.inventory.filter(i => i === this.activeGrenade).length;
+                    grenadeText.innerText = `Granada: ${this.activeGrenade} (${count})`;
+                } else {
+                    grenadeText.innerText = `Granada: Nenhuma`;
+                }
+            }
+        }
+
+
+        function triggerKillUI() {
+            const el = document.getElementById('kill-notification');
+            el.classList.add('show-kill');
+
+            // Treme a tela um pouco para dar impacto (opcional)
+            canvas.style.transform = `translate(${(Math.random() - 0.5) * 10}px, ${(Math.random() - 0.5) * 10}px)`;
+
+            setTimeout(() => {
+                el.classList.remove('show-kill');
+                canvas.style.transform = `translate(0, 0)`;
+            }, 800); // Fica 0.8 segundos na tela
+        }
+
+
+        class Enemy {
+            constructor(x, y) {
+                this.x = x;
+                this.y = y;
+                this.radius = 18;
+                this.speed = 2 + Math.random() * 1;
+                this.hp = 50 + Math.random() * 50;
+                this.angle = Math.random() * Math.PI * 2;
+                this.state = 'PATROL';
+                this.patrolTimer = 0;
+                this.shootCooldown = 0;
+                this.stanceSide = Math.random() > 0.5 ? 1 : -1;
+
+                this.faction = Math.random() > 0.3 ? 'SCAV' : 'PMC';
+                this.color = this.faction === 'SCAV' ? '#4d0000' : '#1a3300';
+
+                let enemyGuns = this.faction === 'SCAV'
+                    ? ["Pistola PM", "Pistola PM", "Shotgun MP-133"]
+                    : ["Shotgun MP-133", "AK-74U", "Sniper Mosin"];
+                this.weapon = WEAPONS[enemyGuns[Math.floor(Math.random() * enemyGuns.length)]];
+                this.target = null;
+            }
+
+            update() {
+                if (currentState !== GAME_STATE.PLAYING) return;
+                let closestDist = 550;
+                this.target = null;
+
+                if (player.hp > 0) {
+                    let hostileToPlayer = true;
+                    if (this.faction === 'SCAV' && player.faction === 'SCAV' && !player.isTraitor) hostileToPlayer = false;
+
+                    if (hostileToPlayer) {
+                        let d = Math.hypot(player.x - this.x, player.y - this.y);
+                        if (d < closestDist) {
+                            closestDist = d;
+                            this.target = player;
+                        }
+                    }
+                }
+
+                for (let other of enemies) {
+                    if (other === this || other.hp <= 0 || other.faction === this.faction) continue;
+                    let d = Math.hypot(other.x - this.x, other.y - this.y);
+                    if (d < closestDist) {
+                        closestDist = d;
+                        this.target = other;
+                    }
+                }
+
+                let hasLOS = false;
+
+                if (this.target) {
+                    hasLOS = true;
+                    let steps = 15;
+                    for (let i = 1; i <= steps; i++) {
+                        let checkX = this.x + (this.target.x - this.x) * (i / steps);
+                        let checkY = this.y + (this.target.y - this.y) * (i / steps);
+                        for (let wall of walls) {
+                            if (pointInRect(checkX, checkY, wall)) { hasLOS = false; break; }
+                        }
+                        if (!hasLOS) break;
+
+                        for (let smoke of smokes) {
+                            if (Math.hypot(checkX - smoke.x, checkY - smoke.y) < smoke.radius) { hasLOS = false; break; }
+                        }
+                        if (!hasLOS) break;
+                    }
+                }
+
+                for (let f of fires) {
+                    if (Math.hypot(this.x - f.x, this.y - f.y) < f.radius) {
+                        if (Math.random() < 0.1) this.takeDamage(2);
+                    }
+                }
+
+                if (hasLOS) {
+                    this.state = 'CHASE';
+                } else if (!this.target) {
+                    this.state = 'PATROL';
+                }
+
+                if (this.state === 'PATROL') {
+                    this.patrolTimer--;
+                    if (this.patrolTimer <= 0) {
+                        this.angle = Math.random() * Math.PI * 2;
+                        this.patrolTimer = 60 + Math.random() * 120;
+                    }
+                    this.move(Math.cos(this.angle) * this.speed * 0.5, Math.sin(this.angle) * this.speed * 0.5);
+                }
+                else if (this.state === 'CHASE' && this.target) {
+                    this.angle = Math.atan2(this.target.y - this.y, this.target.x - this.x);
+                    let distToTarget = Math.hypot(this.target.x - this.x, this.target.y - this.y);
+                    let minDistance = this.weapon.type === 'Shotgun' ? 100 : 200;
+
+                    if (distToTarget > minDistance) {
+                        this.move(Math.cos(this.angle) * this.speed, Math.sin(this.angle) * this.speed);
+                    }
+
+                    if (this.shootCooldown > 0) this.shootCooldown--;
+                    if (this.shootCooldown <= 0 && hasLOS) this.shoot();
+                }
+            }
+
+            move(dx, dy) {
+                let nextX = this.x + dx;
+                let nextY = this.y + dy;
+                let collideX = false;
+                let collideY = false;
+                for (let wall of walls) {
+                    if (circleRectCollide(nextX, this.y, this.radius, wall)) collideX = true;
+                    if (circleRectCollide(this.x, nextY, this.radius, wall)) collideY = true;
+                }
+                if (!collideX && nextX > this.radius && nextX < WORLD_SIZE - this.radius) this.x = nextX;
+                if (!collideY && nextY > this.radius && nextY < WORLD_SIZE - this.radius) this.y = nextY;
+            }
+
+            shoot() {
+                let factionSpreadOffset = this.faction === 'PMC' ? 0.15 : 0.4;
+                let baseSpread = this.weapon.spread + factionSpreadOffset;
+
+                let panicAimError = this.faction === 'PMC' ? 0.2 : 0.5;
+                let shootAngle = this.angle + (Math.random() - 0.5) * panicAimError;
+
+                let barrelDistX = this.radius + (this.weapon.type === 'Pistol' ? 15 : 25);
+                let barrelDistY = 8 * this.stanceSide;
+                let barrelX = this.x + Math.cos(this.angle) * barrelDistX - Math.sin(this.angle) * barrelDistY;
+                let barrelY = this.y + Math.sin(this.angle) * barrelDistX + Math.cos(this.angle) * barrelDistY;
+
+                for (let i = 0; i < this.weapon.pellets; i++) {
+                    let spread = (Math.random() - 0.5) * baseSpread;
+                    let bulletSpeed = this.weapon.speed * 0.7;
+                    let bullet = new Bullet(barrelX, barrelY, shootAngle + spread, this.faction, this.weapon.damage, bulletSpeed, false);
+                    bullets.push(bullet);
+                }
+
+                this.shootCooldown = this.weapon.fireRate + 20 + (Math.random() * 30);
+                for (let i = 0; i < 3; i++) particles.push(new Particle(barrelX, barrelY, '#555'));
+            }
+
+            takeDamage(amount) {
+                this.hp -= amount;
+                this.state = 'CHASE';
+                for (let i = 0; i < 15; i++) particles.push(new Particle(this.x, this.y, '#9e0000', true));
+                bloodStains.push({ x: this.x + (Math.random() - 0.5) * 10, y: this.y + (Math.random() - 0.5) * 10, size: Math.random() * 8 + 3 });
+            }
+
+            draw() {
+                ctx.save();
+                ctx.translate(this.x, this.y);
+                ctx.rotate(this.angle);
+
+                sketchCircle(0, 0, this.radius, 2, 2, this.color);
+                let sy = 8 * this.stanceSide;
+                let gunLength = this.weapon.type === 'Pistol' ? 15 : 25;
+                sketchLine(this.radius - 5, sy, this.radius + gunLength, sy, 4, 1, '#222');
+                sketchCircle(this.radius + 2, sy, 4, 2, 2, this.color);
+                sketchCircle(this.radius + (gunLength > 15 ? 16 : 8), sy, 4, 2, 2, this.color);
+
+                ctx.restore();
+            }
+        }
+
+        class Bullet {
+            constructor(x, y, angle, shooterFaction, damage, speed, isPlayer) {
+                this.x = x; this.y = y;
+                this.vx = Math.cos(angle) * speed;
+                this.vy = Math.sin(angle) * speed;
+                this.shooterFaction = shooterFaction;
+                this.damage = damage * (0.8 + Math.random() * 0.4);
+                this.life = 100;
+                this.isPlayer = isPlayer;
+                this.trail = [];
+            }
+
+            update() {
+                this.x += this.vx; this.y += this.vy; this.life--;
+
+                this.trail.push({ x: this.x, y: this.y });
+                if (this.trail.length > 5) this.trail.shift();
+
+                for (let wall of walls) {
+                    if (pointInRect(this.x, this.y, wall)) {
+                        this.life = 0;
+                        for (let i = 0; i < 3; i++) particles.push(new Particle(this.x, this.y, '#222'));
+                        return;
+                    }
+                }
+
+                if (!this.isPlayer) {
+                    if (player.hp > 0 && Math.hypot(this.x - player.x, this.y - player.y) < player.radius) {
+                        player.takeDamage(this.damage); this.life = 0;
+                    }
+                }
+
+                if (this.life > 0) {
+                    for (let i = enemies.length - 1; i >= 0; i--) {
+                        let enemy = enemies[i];
+                        let canHit = false;
+                        if (this.isPlayer) canHit = true;
+                        else if (this.shooterFaction !== enemy.faction) canHit = true;
+
+                        if (canHit && Math.hypot(this.x - enemy.x, this.y - enemy.y) < enemy.radius) {
+                            if (this.isPlayer && player.faction === 'SCAV' && enemy.faction === 'SCAV' && !player.isTraitor) {
+                                player.isTraitor = true;
+                                factionDisplay.innerText = "Facção: SCAV TRAIDOR!";
+                                factionDisplay.className = "text-xl sketch-text font-bold text-red-600 animate-pulse";
+                            }
+
+                            enemy.takeDamage(this.damage);
+                            this.life = 0;
+
+                            if (enemy.hp <= 0) {
+                                for (let j = 0; j < 25; j++) particles.push(new Particle(enemy.x, enemy.y, '#a30000', true));
+                                createCorpse(enemy.x, enemy.y, enemy.angle, enemy.color);
+                                spawnWeaponDrop(enemy.x, enemy.y, enemy.weapon.name);
+
+                                // --- ADICIONE ISSO AQUI ---
+                                if (this.isPlayer) {
+                                    showKillMessage();
+                                }
+                                // --------------------------
+
+                                if (Math.random() > 0.5) spawnLoot(enemy.x + 20, enemy.y + 20);
+                                enemies.splice(i, 1);
+                            }
+                            break;
+                        }
+                    }
+                }
+            }
+
+            draw() {
+                // Se a velocidade for baixa e o dano alto, é a AK Dragão (Fogo)
+                if (this.vx < 15 && this.damage > 40) {
+                    ctx.fillStyle = Math.random() > 0.5 ? '#ff4500' : '#ff8c00';
+                    ctx.beginPath();
+                    ctx.arc(this.x, this.y, 6 + Math.random() * 8, 0, Math.PI * 2);
+                    ctx.fill();
+                } else {
+                    // Bala Normal
+                    ctx.strokeStyle = this.damage > 40 ? '#ff8c00' : '#000';
+                    ctx.lineWidth = this.damage > 40 ? 3 : 2;
+                    ctx.beginPath();
+                    if (this.trail.length > 0) {
+                        ctx.moveTo(this.trail[0].x, this.trail[0].y);
+                        ctx.lineTo(this.x, this.y);
+                    }
+                    ctx.stroke();
+                }
+            }
+        }
+
+        class Throwable {
+            constructor(x, y, tx, ty, type) {
+                this.x = x; this.y = y;
+                this.tx = tx; this.ty = ty;
+                this.type = type;
+                this.speed = 10;
+                this.angle = Math.atan2(ty - y, tx - x);
+                this.dist = Math.hypot(tx - x, ty - y);
+                this.life = 150;
+            }
+            update() {
+                let moveDist = Math.min(this.speed, this.dist);
+                this.x += Math.cos(this.angle) * moveDist;
+                this.y += Math.sin(this.angle) * moveDist;
+                this.dist -= moveDist;
+                this.life--;
+
+                for (let wall of walls) {
+                    if (pointInRect(this.x, this.y, wall)) {
+                        this.dist = 0;
+                        break;
+                    }
+                }
+
+                if (this.dist <= 0 || this.life <= 0) {
+                    if (this.type === 'MOLOTOV') {
+                        fires.push(new FirePool(this.x, this.y));
+                        for (let i = 0; i < 15; i++) particles.push(new Particle(this.x, this.y, '#ff4500'));
+                    }
+                    if (this.type === 'SMOKE') {
+                        smokes.push(new SmokeScreen(this.x, this.y));
+                    }
+                    return false;
+                }
+                return true;
+            }
+            draw() {
+                sketchCircle(this.x, this.y, 4, 2, 2, this.type === 'MOLOTOV' ? '#ff4500' : '#808080');
+            }
+        }
+
+        class FirePool {
+            constructor(x, y) {
+                this.x = x; this.y = y;
+                this.radius = 80;
+                this.life = 3600;
+                this.maxLife = 3600;
+            }
+            update() {
+                this.life--;
+                if (Math.random() < 0.2) particles.push(new Particle(this.x + (Math.random() - 0.5) * this.radius * 1.5, this.y + (Math.random() - 0.5) * this.radius * 1.5, '#ff4500', false));
+                if (Math.random() < 0.1) particles.push(new Particle(this.x + (Math.random() - 0.5) * this.radius * 1.5, this.y + (Math.random() - 0.5) * this.radius * 1.5, '#ff8c00', false));
+                return this.life > 0;
+            }
+            draw() {
+                ctx.fillStyle = `rgba(255, 69, 0, ${Math.min(0.4, this.life / 100)})`;
+                ctx.beginPath(); ctx.arc(this.x, this.y, this.radius, 0, Math.PI * 2); ctx.fill();
+                sketchCircle(this.x, this.y, this.radius, 2, 1, `rgba(255, 0, 0, ${Math.min(0.7, this.life / 50)})`);
+            }
+        }
+
+        class SmokeScreen {
+            constructor(x, y) {
+                this.x = x; this.y = y;
+                this.radius = 1;
+                this.maxRadius = 140;
+                this.life = 1200;
+                this.maxLife = 1200;
+            }
+            update() {
+                this.life--;
+                if (this.radius < this.maxRadius) this.radius += 2;
+                return this.life > 0;
+            }
+            draw() {
+                let alpha = Math.min(0.95, this.life / 100);
+                ctx.fillStyle = `rgba(180, 180, 180, ${alpha})`;
+                ctx.beginPath(); ctx.arc(this.x, this.y, this.radius, 0, Math.PI * 2); ctx.fill();
+                sketchCircle(this.x, this.y, this.radius, 2, 2, `rgba(130, 130, 130, ${alpha})`);
+                sketchCircle(this.x - this.radius * 0.3, this.y - this.radius * 0.2, this.radius * 0.6, 2, 1, `rgba(150, 150, 150, ${alpha})`);
+                sketchCircle(this.x + this.radius * 0.4, this.y + this.radius * 0.1, this.radius * 0.7, 2, 1, `rgba(140, 140, 140, ${alpha})`);
+            }
+        }
+
+        class Particle {
+            constructor(x, y, color, isBlood = false) {
+                this.x = x; this.y = y; this.isBlood = isBlood;
+                let speedMult = isBlood ? 8 : 4;
+                this.vx = (Math.random() - 0.5) * speedMult;
+                this.vy = (Math.random() - 0.5) * speedMult;
+                this.life = 15 + Math.random() * 20;
+                this.maxLife = this.life;
+                this.color = color;
+                this.size = isBlood ? Math.random() * 4 + 2 : Math.random() * 3 + 1;
+            }
+            update() {
+                this.x += this.vx; this.y += this.vy;
+                this.vx *= 0.85; this.vy *= 0.85; this.life--;
+
+                if (this.life <= 0 && this.isBlood) {
+                    if (Math.random() > 0.3) {
+                        bloodStains.push({ x: this.x, y: this.y, size: this.size * (Math.random() * 1.5 + 0.5) });
+                        if (bloodStains.length > 800) bloodStains.shift();
+                    }
+                }
+            }
+            draw() {
+                ctx.fillStyle = this.color;
+                ctx.globalAlpha = Math.max(0, this.life / this.maxLife);
+                ctx.fillRect(this.x, this.y, this.size, this.size);
+                ctx.globalAlpha = 1;
+            }
+        }
+
+        // Data structures
+        let player = new Player();
+        let walls = [];
+        let extracts = [];
+        let enemies = [];
+        let bullets = [];
+        let loots = [];
+        let particles = [];
+        let groundDecorations = [];
+        let bloodStains = [];
+        let corpses = [];
+        let throwables = [];
+        let fires = [];
+        let smokes = [];
+
+        const LOOT_TYPES = [
+            { name: "Relógio de Ouro", isWeapon: false, value: 50000, color: "#b8860b" },
+            { name: "Fita Isolante", isWeapon: false, value: 2000, color: "#333" },
+            { name: "Bitcoin", isWeapon: false, value: 300000, color: "#d4af37" },
+            { name: "Lata de Carne", isWeapon: false, value: 5000, color: "#8b4513" },
+            { name: "Placa de Vídeo", isWeapon: false, value: 150000, color: "#228b22" },
+            { name: "Kit de Sobrevivência", isWeapon: false, value: 8000, color: "#cc0000" },
+            { name: "Coquetel Molotov", isWeapon: false, value: 5000, color: "#ff4500" },
+            { name: "Bomba de Fumaça", isWeapon: false, value: 4000, color: "#808080" },
+            { name: "Binóculos", isWeapon: false, value: 15000, color: "#2f4f4f" }
+        ];
+
+        function pointInRect(px, py, rect) { return px >= rect.x && px <= rect.x + rect.w && py >= rect.y && py <= rect.y + rect.h; }
+        function circleRectCollide(cx, cy, r, rect) {
+            let testX = cx; let testY = cy;
+            if (cx < rect.x) testX = rect.x; else if (cx > rect.x + rect.w) testX = rect.x + rect.w;
+            if (cy < rect.y) testY = rect.y; else if (cy > rect.y + rect.h) testY = rect.y + rect.h;
+            let distX = cx - testX; let distY = cy - testY;
+            let distance = Math.sqrt((distX * distX) + (distY * distY));
+            return distance <= r;
+        }
+
+        function createCorpse(x, y, angle, color) {
+            corpses.push({ x, y, angle, color });
+            for (let i = 0; i < 15; i++) {
+                bloodStains.push({
+                    x: x + (Math.random() - 0.5) * 35, y: y + (Math.random() - 0.5) * 35, size: Math.random() * 15 + 5
+                });
+            }
+        }
+
+        function startGame(factionChoice) {
+            document.getElementById('start-screen').classList.add('hidden');
+            document.getElementById('ui-layer').classList.remove('hidden');
+
+            player.faction = factionChoice;
+            player.isTraitor = false;
+
+            if (factionChoice === 'PMC') {
+                player.color = '#1a3300';
+                factionDisplay.innerText = "Facção: PMC (Hostil a todos)";
+                factionDisplay.className = "text-xl sketch-text font-bold text-[#1a3300]";
+                player.equipWeapon("Pistola PM");
+            } else {
+                player.color = '#4d0000';
+                factionDisplay.innerText = "Facção: SCAV (Aliado aos Scavs)";
+                factionDisplay.className = "text-xl sketch-text font-bold text-[#4d0000]";
+                let scavGuns = ["Pistola PM", "Shotgun MP-133"];
+                player.equipWeapon(scavGuns[Math.floor(Math.random() * scavGuns.length)]);
+            }
+
+            player.hp = player.maxHp;
+            player.inventory = [];
+            player.totalValue = 0;
+            player.activeGrenade = null;
+            player.updateUI();
+
+            walls = []; extracts = []; enemies = []; bullets = []; loots = [];
+            particles = []; groundDecorations = []; bloodStains = []; corpses = [];
+            throwables = []; fires = []; smokes = [];
+
+            generateMap();
+            currentState = GAME_STATE.PLAYING;
+        }
+
+        function generateMap() {
+            for (let i = 0; i < 50; i++) {
+                let w = 100 + Math.random() * 200; let h = 100 + Math.random() * 200;
+                let x = Math.random() * (WORLD_SIZE - w); let y = Math.random() * (WORLD_SIZE - h);
+                if (Math.hypot((x + w / 2) - player.x, (y + h / 2) - player.y) > 300) { walls.push({ x, y, w, h }); }
+            }
+
+            for (let i = 0; i < 75; i++) {
+                let x = Math.random() * WORLD_SIZE; let y = Math.random() * WORLD_SIZE;
+                if (Math.hypot(x - player.x, y - player.y) > 600) enemies.push(new Enemy(x, y));
+            }
+
+            for (let i = 0; i < 50; i++) spawnLoot(Math.random() * WORLD_SIZE, Math.random() * WORLD_SIZE);
+
+            loots.push({ x: WORLD_SIZE / 2 - 50, y: WORLD_SIZE / 2, name: "Coquetel Molotov", value: 5000, color: "#ff4500", isWeapon: false });
+            loots.push({ x: WORLD_SIZE / 2 + 50, y: WORLD_SIZE / 2, name: "Bomba de Fumaça", value: 4000, color: "#808080", isWeapon: false });
+            loots.push({ x: WORLD_SIZE / 2, y: WORLD_SIZE / 2 - 50, name: "Binóculos", value: 15000, color: "#2f4f4f", isWeapon: false });
+
+            for (let i = 0; i < 8; i++) {
+                let highTier = ["Sniper Mosin", "AK-74U", "Shotgun MP-133"];
+                spawnWeaponDrop(Math.random() * WORLD_SIZE, Math.random() * WORLD_SIZE, highTier[Math.floor(Math.random() * highTier.length)]);
+            }
+
+            extracts.push({ x: 50, y: 50, w: 200, h: 200, name: "Saída Norte" });
+            extracts.push({ x: WORLD_SIZE - 250, y: WORLD_SIZE - 250, w: 200, h: 200, name: "Saída Sul" });
+
+            for (let i = 0; i < 600; i++) {
+                groundDecorations.push({
+                    x: Math.random() * WORLD_SIZE, y: Math.random() * WORLD_SIZE,
+                    length: 10 + Math.random() * 30, angle: Math.random() * Math.PI,
+                    passes: Math.floor(Math.random() * 2) + 1
+                });
+            }
+        }
+
+        function spawnLoot(x, y) {
+            let template = LOOT_TYPES[Math.floor(Math.random() * LOOT_TYPES.length)];
+            loots.push({
+                x: x + (Math.random() - 0.5) * 40, y: y + (Math.random() - 0.5) * 40,
+                name: template.name, value: template.value, color: template.color, isWeapon: false
+            });
+        }
+
+        function spawnWeaponDrop(x, y, weaponName) {
+            let wData = WEAPONS[weaponName];
+            let v = wData.type === 'Sniper' ? 80000 : (wData.type === 'Rifle' ? 45000 : 25000);
+            loots.push({
+                x: x + (Math.random() - 0.5) * 20, y: y + (Math.random() - 0.5) * 20,
+                name: weaponName, value: v, color: wData.color, isWeapon: true
+            });
+        }
+
+        // Spawna a arma lendária perto do centro do mapa
+        spawnWeaponDrop(WORLD_SIZE / 2 + 50, WORLD_SIZE / 2 + 50, "AK Dragão de Fogo");
+
+        function updateInventoryUI() {
+            inventoryList.innerHTML = '';
+            if (player.inventory.length === 0) {
+                inventoryList.innerHTML = '<li class="italic text-gray-400">Vazia...</li>';
+            } else {
+                player.inventory.forEach(item => {
+                    let li = document.createElement('li');
+                    if (Object.keys(WEAPONS).includes(item)) li.classList.add('text-blue-900', 'font-bold');
+                    li.innerText = item;
+                    inventoryList.appendChild(li);
+                });
+            }
+            lootValueText.innerText = player.totalValue.toLocaleString('pt-BR');
+            player.updateUI();
+        }
+
+        function triggerEndGame(state) {
+            currentState = state;
+            document.getElementById('ui-layer').classList.add('hidden');
+            endScreen.classList.remove('hidden');
+
+            if (state === GAME_STATE.GAMEOVER) {
+                endTitle.innerText = "K.I.A.";
+                endTitle.style.color = "#8b0000";
+                endStats.innerText = `Você morreu. Loot (₽ ${player.totalValue.toLocaleString('pt-BR')}) perdido.`;
+            } else if (state === GAME_STATE.EXTRACTED) {
+                endTitle.innerText = "EXTRAÍDO COM SUCESSO!";
+                endTitle.style.color = "#006400";
+                endStats.innerText = `Você sobreviveu com ₽ ${player.totalValue.toLocaleString('pt-BR')} em itens.`;
+            }
+        }
+
+        function update() {
+            if (currentState !== GAME_STATE.PLAYING) return;
+
+            player.update();
+            for (let enemy of enemies) enemy.update();
+
+            for (let i = bullets.length - 1; i >= 0; i--) {
+                bullets[i].update();
+                if (bullets[i].life <= 0) bullets.splice(i, 1);
+            }
+            for (let i = particles.length - 1; i >= 0; i--) {
+                particles[i].update();
+                if (particles[i].life <= 0) particles.splice(i, 1);
+            }
+            for (let i = throwables.length - 1; i >= 0; i--) {
+                if (!throwables[i].update()) throwables.splice(i, 1);
+            }
+            for (let i = fires.length - 1; i >= 0; i--) {
+                if (!fires[i].update()) fires.splice(i, 1);
+            }
+            for (let i = smokes.length - 1; i >= 0; i--) {
+                if (!smokes[i].update()) smokes.splice(i, 1);
+            }
+        }
+
+        function draw() {
+            ctx.fillStyle = '#f4f4f0';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            ctx.save();
+
+            let targetCamX = player.x;
+            let targetCamY = player.y;
+
+            if (currentState === GAME_STATE.PLAYING && player.usingBinoculars) {
+                targetCamX += (worldMouse.x - player.x) * 0.5;
+                targetCamY += (worldMouse.y - player.y) * 0.5;
+            }
+
+            let camX = targetCamX - canvas.width / 2;
+            let camY = targetCamY - canvas.height / 2;
+
+            if (currentState === GAME_STATE.MENU) {
+                camX = WORLD_SIZE / 2 - canvas.width / 2;
+                camY = WORLD_SIZE / 2 - canvas.height / 2;
+            }
+
+            camX = Math.max(0, Math.min(camX, WORLD_SIZE - canvas.width));
+            camY = Math.max(0, Math.min(camY, WORLD_SIZE - canvas.height));
+
+            ctx.translate(-camX, -camY);
+
+            sketchRect(0, 0, WORLD_SIZE, WORLD_SIZE, 5, 3, '#000');
+
+            ctx.strokeStyle = 'rgba(0,0,0,0.1)';
+            ctx.lineWidth = 1;
+            for (let deco of groundDecorations) {
+                if (deco.x > camX - 50 && deco.x < camX + canvas.width + 50 && deco.y > camY - 50 && deco.y < camY + canvas.height + 50) {
+                    ctx.beginPath();
+                    ctx.moveTo(deco.x, deco.y);
+                    ctx.lineTo(deco.x + Math.cos(deco.angle) * deco.length, deco.y + Math.sin(deco.angle) * deco.length);
+                    ctx.stroke();
+                }
+            }
+
+            for (let stain of bloodStains) {
+                if (stain.x > camX - 50 && stain.x < camX + canvas.width + 50 && stain.y > camY - 50 && stain.y < camY + canvas.height + 50) {
+                    ctx.fillStyle = 'rgba(150, 0, 0, 0.4)';
+                    ctx.beginPath(); ctx.arc(stain.x, stain.y, stain.size, 0, Math.PI * 2); ctx.fill();
+                    sketchCircle(stain.x, stain.y, stain.size, 1, 1, 'rgba(120, 0, 0, 0.7)');
+                }
+            }
+
+            for (let corpse of corpses) {
+                if (corpse.x > camX - 50 && corpse.x < camX + canvas.width + 50 && corpse.y > camY - 50 && corpse.y < camY + canvas.height + 50) {
+                    ctx.save(); ctx.translate(corpse.x, corpse.y); ctx.rotate(corpse.angle);
+                    let color = corpse.color;
+                    sketchCircle(0, 0, 18, 2, 2, color);
+                    sketchLine(-6, -6, -2, -2, 2, 1, '#111'); sketchLine(-2, -6, -6, -2, 2, 1, '#111');
+                    sketchLine(2, -6, 6, -2, 2, 1, '#111'); sketchLine(6, -6, 2, -2, 2, 1, '#111');
+                    sketchLine(15, 5, 25, 20, 3, 2, color); sketchLine(15, -5, 25, -20, 3, 2, color);
+                    ctx.restore();
+                }
+            }
+
+            for (let ex of extracts) {
+                ctx.fillStyle = 'rgba(0, 200, 0, 0.1)'; ctx.fillRect(ex.x, ex.y, ex.w, ex.h);
+                sketchRect(ex.x, ex.y, ex.w, ex.h, 2, 2, '#008800');
+                ctx.fillStyle = '#008800'; ctx.font = '24px Caveat'; ctx.fillText(ex.name, ex.x + 10, ex.y + 30);
+            }
+
+            for (let loot of loots) {
+                if (loot.isWeapon) {
+                    sketchRect(loot.x - 12, loot.y - 6, 24, 12, 2, 2, loot.color);
+                    ctx.fillStyle = loot.color; ctx.font = "12px Arial"; ctx.fillText("Arma", loot.x - 12, loot.y - 8);
+                } else {
+                    sketchRect(loot.x - 8, loot.y - 8, 16, 16, 2, 2, loot.color);
+                    if (loot.name === "Kit de Sobrevivência") {
+                        ctx.beginPath(); ctx.moveTo(loot.x - 4, loot.y); ctx.lineTo(loot.x + 4, loot.y);
+                        ctx.moveTo(loot.x, loot.y - 4); ctx.lineTo(loot.x, loot.y + 4);
+                        ctx.strokeStyle = '#fff'; ctx.lineWidth = 3; ctx.stroke();
+                    } else {
+                        ctx.beginPath(); ctx.moveTo(loot.x - 4, loot.y - 4); ctx.lineTo(loot.x + 4, loot.y + 4);
+                        ctx.strokeStyle = loot.color; ctx.lineWidth = 1; ctx.stroke();
+                    }
+                }
+            }
+
+            for (let wall of walls) {
+                if (wall.x + wall.w > camX && wall.x < camX + canvas.width && wall.y + wall.h > camY && wall.y < camY + canvas.height) {
+                    ctx.fillStyle = 'rgba(200, 200, 200, 0.5)'; ctx.fillRect(wall.x, wall.y, wall.w, wall.h);
+                    sketchRect(wall.x, wall.y, wall.w, wall.h, 3, 2, '#222');
+                    ctx.strokeStyle = 'rgba(0,0,0,0.2)'; ctx.lineWidth = 1;
+                    for (let i = 0; i < wall.w; i += 20) { ctx.beginPath(); ctx.moveTo(wall.x + i, wall.y); ctx.lineTo(wall.x + i, wall.y + wall.h); ctx.stroke(); }
+                    for (let i = 0; i < wall.h; i += 20) { ctx.beginPath(); ctx.moveTo(wall.x, wall.y + i); ctx.lineTo(wall.x + wall.w, wall.y + i); ctx.stroke(); }
+                }
+            }
+
+            if (currentState === GAME_STATE.PLAYING) {
+
+                // MIRA DE GRANADA (DRAW PREVIEW)
+                if (mouse.rightDown && player.activeGrenade) {
+                    sketchLine(player.x, player.y, worldMouse.x, worldMouse.y, 2, 1, 'rgba(0,0,0,0.4)', [5, 5]);
+                    let pColor = player.activeGrenade === 'Coquetel Molotov' ? 'rgba(255, 69, 0, 0.8)' : 'rgba(128, 128, 128, 0.8)';
+                    let fillCol = player.activeGrenade === 'Coquetel Molotov' ? 'rgba(255, 69, 0, 0.1)' : 'rgba(128, 128, 128, 0.1)';
+                    let pRadius = player.activeGrenade === 'Coquetel Molotov' ? 80 : 140;
+
+                    sketchCircle(worldMouse.x, worldMouse.y, 10, 2, 2, pColor);
+                    ctx.beginPath(); ctx.arc(worldMouse.x, worldMouse.y, pRadius, 0, Math.PI * 2);
+                    ctx.fillStyle = fillCol; ctx.fill();
+                }
+
+                for (let enemy of enemies) enemy.draw();
+                player.draw();
+
+                for (let f of fires) f.draw();
+                for (let bullet of bullets) bullet.draw();
+                for (let t of throwables) t.draw();
+                for (let particle of particles) particle.draw();
+                for (let s of smokes) s.draw();
+
+                sketchCircle(worldMouse.x, worldMouse.y, 5, 1, 1, '#ff0000');
+                ctx.beginPath(); ctx.moveTo(worldMouse.x - 10, worldMouse.y); ctx.lineTo(worldMouse.x + 10, worldMouse.y);
+                ctx.moveTo(worldMouse.x, worldMouse.y - 10); ctx.lineTo(worldMouse.x, worldMouse.y + 10);
+                ctx.strokeStyle = '#ff0000'; ctx.stroke();
+            }
+
+            ctx.restore();
+
+            if (currentState === GAME_STATE.PLAYING) {
+                for (let ex of extracts) {
+                    let dx = (ex.x + ex.w / 2) - targetCamX;
+                    let dy = (ex.y + ex.h / 2) - targetCamY;
+                    let dist = Math.hypot(dx, dy);
+
+                    if (dist > Math.min(canvas.width, canvas.height) / 2 - 50) {
+                        let angle = Math.atan2(dy, dx);
+                        let margin = 40;
+                        let indX = canvas.width / 2 + Math.cos(angle) * (canvas.width / 2 - margin);
+                        let indY = canvas.height / 2 + Math.sin(angle) * (canvas.height / 2 - margin);
+
+                        indX = Math.max(margin, Math.min(canvas.width - margin, indX));
+                        indY = Math.max(margin, Math.min(canvas.height - margin, indY));
+
+                        ctx.fillStyle = 'rgba(0, 150, 0, 0.8)'; ctx.beginPath(); ctx.arc(indX, indY, 15, 0, Math.PI * 2); ctx.fill();
+                        ctx.fillStyle = 'white'; ctx.font = 'bold 10px Arial'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText("EXIT", indX, indY);
+                    }
+                }
+            }
+
+            let gradient = ctx.createRadialGradient(canvas.width / 2, canvas.height / 2, canvas.height / 3, canvas.width / 2, canvas.height / 2, canvas.width / 1.5);
+            gradient.addColorStop(0, 'rgba(0,0,0,0)');
+
+            if (currentState === GAME_STATE.PLAYING && player.hp < 50) {
+                let painIntensity = (50 - player.hp) / 50;
+                gradient.addColorStop(1, `rgba(150, 0, 0, ${0.3 + painIntensity * 0.4})`);
+            } else {
+                gradient.addColorStop(1, 'rgba(0,0,0,0.3)');
+            }
+
+            ctx.fillStyle = gradient;
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+        }
+
+        function gameLoop() {
+            update();
+            draw();
+            requestAnimationFrame(gameLoop);
+        }
+
+        generateMap();
+        gameLoop();
+
+    </script>
+</body>
+
+</html>
